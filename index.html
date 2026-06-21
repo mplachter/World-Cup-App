@@ -2,29 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>2026 FIFA World Cup</title>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- htm: JSX-like syntax with zero transpilation, works in any browser -->
+  <script src="https://unpkg.com/htm@3/dist/htm.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #0a0f1e; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: #0a0f1e; color: #e2e8f0; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    button { cursor: pointer; font-family: inherit; }
+    input { font-family: inherit; }
     ::-webkit-scrollbar { width: 4px; height: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
-    .animate-pulse { animation: pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .pulse { animation: pulse 2s ease-in-out infinite; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   </style>
 </head>
 <body>
-  <div id="root"></div>
-
-  <script type="text/babel">
+<div id="root"></div>
+<script>
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
+const html = htm.bind(React.createElement);
 
-// ─── STATIC LOOKUP DATA ───────────────────────────────────────────────────────
+// ─── STATIC DATA ──────────────────────────────────────────────────────────────
 const FIFA_RANKINGS = {
   Argentina:1,Spain:2,France:3,England:4,Portugal:5,Brazil:6,Morocco:7,Netherlands:8,
   Belgium:9,Germany:10,Croatia:11,Colombia:12,Mexico:14,Senegal:15,Uruguay:16,USA:17,
@@ -83,8 +86,8 @@ const SQUADS={
   Belgium:[P("T. Courtois","GK",LL,"Real Madrid"),P("T. Castagne","DEF",PL,"Fulham"),P("M. De Cuyper","DEF",PL,"Brighton"),P("K. De Bruyne","MID",SA,"Napoli"),P("Y. Tielemans","MID",PL,"Aston Villa"),P("A. Onana","MID",PL,"Aston Villa"),P("R. Lukaku","FWD",SA,"Napoli"),P("L. Trossard","FWD",PL,"Arsenal"),P("J. Doku","FWD",PL,"Man City"),P("C. De Ketelaere","MID",SA,"Atalanta"),P("A. Saelemaekers","FWD",SA,"AC Milan"),P("A. Diallo","FWD",PL,"Man United"),P("A. Theate","DEF",BL,"Eintracht Frankfurt"),P("Z. Debast","DEF",PtL,"Sporting CP")],
   Germany:[P("M. Neuer","GK",BL,"Bayern Munich"),P("A. Rüdiger","DEF",LL,"Real Madrid"),P("J. Tah","DEF",BL,"Bayern Munich"),P("N. Schlotterbeck","DEF",BL,"Dortmund"),P("J. Kimmich","MID",BL,"Bayern Munich"),P("J. Musiala","MID",BL,"Bayern Munich"),P("A. Pavlović","MID",BL,"Bayern Munich"),P("D. Undav","FWD",BL,"VfB Stuttgart"),P("M. Beier","FWD",BL,"Dortmund"),P("K. Havertz","FWD",PL,"Arsenal"),P("F. Wirtz","MID",PL,"Liverpool"),P("M. Olise","FWD",BL,"Bayern Munich"),P("L. Sané","FWD",SUP,"Galatasaray")],
   Croatia:[P("J. Gvardiol","DEF",PL,"Man City"),P("M. Kovačić","MID",PL,"Man City"),P("J. Stanišić","DEF",BL,"Bayern Munich"),P("L. Sučić","MID",LL,"Real Sociedad"),P("L. Modrić","MID",SA,"AC Milan"),P("M. Pašalić","MID",SA,"Atalanta"),P("J. Šutalo","DEF",ERE,"Ajax"),P("I. Perišić","FWD",ERE,"PSV"),P("A. Kramarić","FWD",BL,"Hoffenheim"),P("A. Budimir","FWD",LL,"Osasuna"),P("D. Ćaleta-Car","DEF",LL,"Real Sociedad")],
-  Colombia:[P("D. Muñoz","DEF",PL,"Crystal Palace"),P("J. Lerma","MID",PL,"Crystal Palace"),P("R. Ríos","MID",PtL,"Benfica"),P("L. Díaz","FWD",BL,"Bayern Munich"),P("L. Suárez","FWD",PtL,"Sporting CP"),P("C. Hernández","FWD",LL,"Real Betis"),P("J. Mojica","DEF",LL,"Mallorca"),P("J. Lucumí","DEF",SA,"Bologna"),P("J. Rodríguez","MID",MLS_,"Minnesota Utd"),P("D. Ospina","GK",OTH,"Atlético Nacional")],
-  Mexico:[P("R. Jiménez","FWD",PL,"Fulham"),P("J. Vásquez","DEF",SA,"Genoa"),P("S. Giménez","FWD",SA,"AC Milan"),P("E. Álvarez","MID",SUP,"Fenerbahçe"),P("Á. Fidalgo","MID",LL,"Real Betis"),P("J. Quiñones","FWD",SPL,"Al-Qadsiah"),P("G. Ochoa","GK",OTH,"AEL Limassol"),P("L. Romo","MID",OTH,"Guadalajara")],
+  Colombia:[P("D. Muñoz","DEF",PL,"Crystal Palace"),P("J. Lerma","MID",PL,"Crystal Palace"),P("R. Ríos","MID",PtL,"Benfica"),P("L. Díaz","FWD",BL,"Bayern Munich"),P("L. Suárez","FWD",PtL,"Sporting CP"),P("C. Hernández","FWD",LL,"Real Betis"),P("J. Lucumí","DEF",SA,"Bologna"),P("J. Rodríguez","MID",MLS_,"Minnesota Utd"),P("D. Ospina","GK",OTH,"Atlético Nacional")],
+  Mexico:[P("R. Jiménez","FWD",PL,"Fulham"),P("J. Vásquez","DEF",SA,"Genoa"),P("S. Giménez","FWD",SA,"AC Milan"),P("E. Álvarez","MID",SUP,"Fenerbahçe"),P("Á. Fidalgo","MID",LL,"Real Betis"),P("J. Quiñones","FWD",SPL,"Al-Qadsiah"),P("G. Ochoa","GK",OTH,"AEL Limassol")],
   Senegal:[P("É. Mendy","GK",SPL,"Al-Ahli"),P("K. Koulibaly","DEF",SPL,"Al-Hilal"),P("M. Sarr","DEF",PL,"Chelsea"),P("I. Gueye","MID",PL,"Everton"),P("P.M. Sarr","MID",PL,"Tottenham"),P("I. Sarr","FWD",PL,"Crystal Palace"),P("I. Ndiaye","FWD",PL,"Everton"),P("S. Mané","FWD",SPL,"Al-Nassr"),P("N. Jackson","FWD",BL,"Bayern Munich"),P("L. Camara","MID",L1,"Monaco"),P("M. Niakhaté","DEF",L1,"Lyon")],
   Uruguay:[P("J.M. Giménez","DEF",LL,"Atlético Madrid"),P("R. Araújo","DEF",LL,"Barcelona"),P("F. Valverde","MID",LL,"Real Madrid"),P("R. Bentancur","MID",PL,"Tottenham"),P("M. Ugarte","MID",PL,"Man United"),P("M. Olivera","DEF",SA,"Napoli"),P("D. Núñez","FWD",SPL,"Al-Hilal"),P("F. Muslera","GK",OTH,"Estudiantes"),P("M. Araújo","MID",PtL,"Sporting CP")],
   USA:[P("A. Robinson","DEF",PL,"Fulham"),P("C. Richards","DEF",PL,"Crystal Palace"),P("T. Adams","MID",PL,"Bournemouth"),P("J. Scally","DEF",BL,"B. Mönchengladbach"),P("A. Freeman","DEF",LL,"Villarreal"),P("S. Dest","DEF",ERE,"PSV"),P("M. McKenzie","DEF",L1,"Toulouse"),P("G. Reyna","MID",BL,"B. Mönchengladbach"),P("M. Tillman","MID",BL,"Bayer Leverkusen"),P("W. McKennie","MID",SA,"Juventus"),P("C. Pulisic","FWD",SA,"AC Milan"),P("R. Pepi","FWD",ERE,"PSV"),P("F. Balogun","FWD",L1,"Monaco"),P("T. Weah","FWD",L1,"Marseille"),P("M. Turner","GK",MLS_,"New England"),P("A. Trusty","DEF",SP,"Celtic")],
@@ -92,7 +95,7 @@ const SQUADS={
   Switzerland:[P("G. Kobel","GK",BL,"Dortmund"),P("M. Akanji","DEF",SA,"Inter Milan"),P("N. Elvedi","DEF",BL,"B. Mönchengladbach"),P("G. Xhaka","MID",BL,"Bayer Leverkusen"),P("R. Freuler","MID",SA,"Bologna"),P("D. Sow","MID",LL,"Sevilla"),P("B. Embolo","FWD",L1,"Rennes"),P("D. Ndoye","FWD",PL,"Nottm Forest"),P("N. Okafor","FWD",CH,"Leeds Utd"),P("R. Vargas","FWD",LL,"Sevilla"),P("A. Jashari","MID",SA,"AC Milan")],
   "South Korea":[P("Kim Min-jae","DEF",BL,"Bayern Munich"),P("Hwang Hee-chan","MID",PL,"Wolves"),P("Lee Kang-in","MID",L1,"PSG"),P("Hwang In-beom","MID",ERE,"Feyenoord"),P("Bae Jun-ho","MID",CH,"Stoke City"),P("Yang Hyun-jun","MID",SP,"Celtic"),P("Son Heung-min","FWD",MLS_,"LA FC"),P("Kim Seung-gyu","GK",OTH,"FC Tokyo")],
   Turkey:[P("A. Bayındır","GK",PL,"Man United"),P("F. Kadıoğlu","DEF",PL,"Brighton"),P("H. Çalhanoğlu","MID",SA,"Inter Milan"),P("Arda Güler","MID",LL,"Real Madrid"),P("K. Yıldız","FWD",SA,"Juventus"),P("S. Özcan","MID",BL,"Dortmund"),P("A. Karazor","MID",BL,"VfB Stuttgart"),P("K. Ayhan","MID",SUP,"Galatasaray"),P("K. Aktürkoğlu","FWD",SUP,"Fenerbahçe"),P("M. Demiral","DEF",SPL,"Al-Ahli")],
-  Norway:[P("E. Haaland","FWD",PL,"Man City"),P("M. Ødegaard","MID",PL,"Arsenal"),P("S. Berge","MID",PL,"Fulham"),P("K. Ajer","DEF",PL,"Brentford"),P("J.S. Larsen","FWD",PL,"Crystal Palace"),P("A. Sørloth","FWD",LL,"Atlético Madrid"),P("J. Ryerson","DEF",BL,"Dortmund"),P("A. Nusa","FWD",BL,"RB Leipzig"),P("F. Aursnes","MID",PtL,"Benfica"),P("Ø. Nyland","GK",LL,"Sevilla"),P("L. Østigård","DEF",SA,"Genoa")],
+  Norway:[P("E. Haaland","FWD",PL,"Man City"),P("M. Ødegaard","MID",PL,"Arsenal"),P("S. Berge","MID",PL,"Fulham"),P("K. Ajer","DEF",PL,"Brentford"),P("J.S. Larsen","FWD",PL,"Crystal Palace"),P("A. Sørloth","FWD",LL,"Atlético Madrid"),P("J. Ryerson","DEF",BL,"Dortmund"),P("A. Nusa","FWD",BL,"RB Leipzig"),P("F. Aursnes","MID",PtL,"Benfica"),P("Ø. Nyland","GK",LL,"Sevilla")],
   Sweden:[P("A. Isak","FWD",PL,"Liverpool"),P("V. Gyökeres","FWD",PL,"Arsenal"),P("A. Elanga","FWD",PL,"Newcastle"),P("V. Lindelöf","DEF",PL,"Aston Villa"),P("L. Bergvall","MID",PL,"Tottenham"),P("Y. Ayari","MID",PL,"Brighton"),P("M. Svanberg","MID",BL,"Wolfsburg"),P("C. Starfelt","DEF",LL,"Celta Vigo"),P("I. Hien","DEF",SA,"Atalanta")],
   Ghana:[P("T. Partey","MID",LL,"Villarreal"),P("Iñaki Williams","FWD",LL,"Athletic Bilbao"),P("A. Fatawu","MID",PL,"Leicester"),P("J. Ayew","FWD",PL,"Leicester"),P("A. Semenyo","FWD",PL,"Man City"),P("K. Sulemana","FWD",SA,"Atalanta"),P("E. Nuamah","FWD",L1,"Lyon"),P("L. Ati-Zigi","GK",OTH,"St. Gallen")],
   Egypt:[P("M. Salah","FWD",PL,"Liverpool"),P("O. Marmoush","FWD",PL,"Man City"),P("M. El Shenawy","GK",SPL,"Al Ahly"),P("M. Abdelmonem","DEF",L1,"Nice"),P("H. Hassan","FWD",LL,"Oviedo")],
@@ -131,32 +134,44 @@ const NORM={"Bosnia & Herzegovina":"Bosnia and Herzegovina","United States":"USA
 const norm=t=>NORM[t]||t;
 const pkey=(a,b)=>[norm(a),norm(b)].sort().join("|");
 function stageOf(r){if(!r)return"group";const s=r.toLowerCase();if(s.includes("round of 32"))return"r32";if(s.includes("round of 16"))return"r16";if(s.includes("quarter"))return"qf";if(s.includes("semi"))return"sf";if(s.includes("third"))return"3rd";if(s.includes("final"))return"final";return"group";}
-function toET(t){if(!t)return"";const m=t.match(/(\d+):(\d+)\s*UTC([+-]\d+)/);if(!m)return t;const utcH=parseInt(m[1])-parseInt(m[3]);const etH=((utcH-4)%24+24)%24;const ap=etH>=12?"PM":"AM";const h12=etH%12||12;return`${h12}:${m[2]} ${ap} ET`;}
-function processRaw(json){const byKey={},byNum={},all=[];(json.matches||[]).forEach(m=>{const h=norm(m.team1),a=norm(m.team2);const e={home:h,away:a,score:m.score?.ft?`${m.score.ft[0]}-${m.score.ft[1]}`:null,ht:m.score?.ht?`${m.score.ht[0]}-${m.score.ht[1]}`:null,goals1:m.goals1||[],goals2:m.goals2||[],date:m.date,time:toET(m.time),ground:m.ground,stage:stageOf(m.round),round:m.round,num:m.num||null,group:m.group||null};byKey[pkey(h,a)]=e;if(m.num)byNum[m.num]=e;all.push(e);});return{byKey,byNum,all};}
+function toET(t){if(!t)return"";const m=t.match(/(\d+):(\d+)\s*UTC([+-]\d+)/);if(!m)return t;const utcH=parseInt(m[1])-parseInt(m[3]);const etH=((utcH-4)%24+24)%24;const ap=etH>=12?"PM":"AM";const h12=etH%12||12;return h12+":"+m[2]+" "+ap+" ET";}
+function processRaw(json){
+  const byKey={},byNum={},all=[];
+  (json.matches||[]).forEach(m=>{
+    const h=norm(m.team1),a=norm(m.team2);
+    const e={home:h,away:a,score:m.score&&m.score.ft?m.score.ft[0]+"-"+m.score.ft[1]:null,ht:m.score&&m.score.ht?m.score.ht[0]+"-"+m.score.ht[1]:null,goals1:m.goals1||[],goals2:m.goals2||[],date:m.date,time:toET(m.time),ground:m.ground,stage:stageOf(m.round),round:m.round,num:m.num||null};
+    byKey[pkey(h,a)]=e;if(m.num)byNum[m.num]=e;all.push(e);
+  });
+  return{byKey,byNum,all};
+}
 
 function useWorldCup(){
-  const [data,setData]=useState(null);
-  const [status,setStatus]=useState("loading");
-  const [updated,setUpdated]=useState(null);
+  const[data,setData]=useState(null);
+  const[status,setStatus]=useState("loading");
+  const[updated,setUpdated]=useState(null);
   const abort=useRef(null);
   const load=useCallback(async()=>{
     if(abort.current)abort.current.abort();
     const ctrl=new AbortController();abort.current=ctrl;
     setStatus("loading");
     for(const url of FEED_URLS){
-      try{const r=await fetch(url,{signal:ctrl.signal,cache:"no-cache"});if(!r.ok)throw new Error(`HTTP ${r.status}`);const json=await r.json();setData(processRaw(json));setStatus("done");setUpdated(new Date());return;}
-      catch(e){if(e.name==="AbortError")return;console.warn("[wc]",url,e.message);}
+      try{
+        const r=await fetch(url,{signal:ctrl.signal,cache:"no-cache"});
+        if(!r.ok)throw new Error("HTTP "+r.status);
+        const json=await r.json();
+        setData(processRaw(json));setStatus("done");setUpdated(new Date());return;
+      }catch(e){if(e.name==="AbortError")return;console.warn("[wc]",url,e.message);}
     }
     setStatus("error");
   },[]);
-  useEffect(()=>{load();const id=setInterval(load,90000);return()=>{clearInterval(id);abort.current?.abort();};},[load]);
+  useEffect(()=>{load();const id=setInterval(load,90000);return()=>{clearInterval(id);if(abort.current)abort.current.abort();};},[load]);
   return{data,status,updated,reload:load};
 }
 
 function useToday(){
-  const [iso,setIso]=useState(()=>new Date().toISOString().slice(0,10));
+  const[iso,setIso]=useState(()=>new Date().toISOString().slice(0,10));
   useEffect(()=>{
-    fetch("https://worldtimeapi.org/api/timezone/America/New_York").then(r=>r.json()).then(d=>{if(d?.datetime)setIso(new Date(d.datetime).toISOString().slice(0,10));}).catch(()=>{});
+    fetch("https://worldtimeapi.org/api/timezone/America/New_York").then(r=>r.json()).then(d=>{if(d&&d.datetime)setIso(new Date(d.datetime).toISOString().slice(0,10));}).catch(()=>{});
     const id=setInterval(()=>{const s=new Date().toISOString().slice(0,10);setIso(p=>p===s?p:s);},30000);
     return()=>clearInterval(id);
   },[]);
@@ -170,7 +185,7 @@ function calcStandings(gk,byKey){
   const teams=GROUPS[gk],rows={};
   teams.forEach(t=>{rows[t]={team:t,mp:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};});
   for(let i=0;i<teams.length;i++)for(let j=i+1;j<teams.length;j++){
-    const e=byKey?.[pkey(teams[i],teams[j])];if(!e?.score)continue;
+    const e=byKey&&byKey[pkey(teams[i],teams[j])];if(!e||!e.score)continue;
     const sc=parseScore(e.score);if(!sc)continue;
     const{h,a}=sc;const hr=rows[e.home],ar=rows[e.away];if(!hr||!ar)continue;
     hr.mp++;ar.mp++;hr.gf+=h;hr.ga+=a;ar.gf+=a;ar.ga+=h;
@@ -179,30 +194,63 @@ function calcStandings(gk,byKey){
   return Object.values(rows).sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf||a.team.localeCompare(b.team));
 }
 
-// ─── UI ATOMS ────────────────────────────────────────────────────────────────
+// ─── STYLES (inline helpers) ─────────────────────────────────────────────────
+const S = {
+  card:(active)=>({borderRadius:"8px",marginBottom:"8px",overflow:"hidden",border:active?"1px solid rgba(217,119,6,0.4)":"1px solid rgba(255,255,255,0.07)",background:"rgba(255,255,255,0.03)"}),
+  row:(cols)=>({display:"grid",gridTemplateColumns:cols,alignItems:"center"}),
+  btn:(active,color)=>({padding:"4px 10px",borderRadius:"4px",fontSize:"11px",cursor:"pointer",fontFamily:"inherit",background:active?(color||"rgba(59,130,246,0.3)"):"rgba(255,255,255,0.05)",border:"1px solid "+(active?(color||"rgba(59,130,246,0.5)"):"rgba(255,255,255,0.1)"),color:active?"#93c5fd":"#94a3b8",fontWeight:active?600:400}),
+  groupBtn:(active)=>({width:"36px",height:"36px",borderRadius:"8px",fontSize:"14px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:active?"rgba(59,130,246,0.3)":"rgba(255,255,255,0.05)",border:active?"1px solid rgba(59,130,246,0.6)":"1px solid rgba(255,255,255,0.1)",color:active?"#93c5fd":"#94a3b8"}),
+  input:{width:"100%",padding:"7px 12px",borderRadius:"6px",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",fontSize:"14px",outline:"none",fontFamily:"inherit"},
+  section:{borderRadius:"8px",overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"},
+};
+
+// ─── UI ATOMS ─────────────────────────────────────────────────────────────────
 function LeagueBar({counts,total}){
   const bars=LEAGUES.map(l=>({l,n:counts[l]||0,pct:total?((counts[l]||0)/total)*100:0})).filter(b=>b.n>0);
-  return(<div><div style={{display:"flex",width:"100%",height:"8px",borderRadius:"4px",overflow:"hidden",gap:"1px"}}>{bars.map(b=><div key={b.l} style={{width:`${b.pct}%`,backgroundColor:LC[b.l],minWidth:"3px"}} title={`${b.l}: ${b.n}`}/>)}</div><div style={{display:"flex",flexWrap:"wrap",gap:"6px 12px",marginTop:"4px"}}>{bars.map(b=><span key={b.l} style={{display:"flex",alignItems:"center",gap:"3px",fontSize:"10px"}}><span style={{width:"6px",height:"6px",borderRadius:"50%",background:LC[b.l],flexShrink:0}}/><span style={{color:"#9ca3af"}}>{b.l}</span><span style={{color:"#d1d5db",fontFamily:"monospace"}}>{b.n}</span></span>)}</div></div>);
-}
-
-function PlayerTag({p}){
-  return(<span style={{display:"inline-flex",alignItems:"center",gap:"4px",padding:"2px 6px",borderRadius:"4px",fontSize:"11px",marginRight:"4px",marginBottom:"4px",backgroundColor:LC[p.league]+"28",color:"#cbd5e1",border:`1px solid ${LC[p.league]}44`}} title={p.club}><span style={{opacity:0.4,fontSize:"9px"}}>{p.pos}</span>{p.name}<span style={{opacity:0.3,fontSize:"9px"}}>{p.club}</span></span>);
+  return html`<div>
+    <div style=${{display:"flex",width:"100%",height:"8px",borderRadius:"4px",overflow:"hidden",gap:"1px"}}>
+      ${bars.map(b=>html`<div key=${b.l} style=${{width:b.pct+"%",backgroundColor:LC[b.l],minWidth:"3px"}} title=${b.l+": "+b.n}/>`)}
+    </div>
+    <div style=${{display:"flex",flexWrap:"wrap",gap:"4px 10px",marginTop:"4px"}}>
+      ${bars.map(b=>html`<span key=${b.l} style=${{display:"flex",alignItems:"center",gap:"3px",fontSize:"10px"}}>
+        <span style=${{width:"6px",height:"6px",borderRadius:"50%",background:LC[b.l],flexShrink:0}}/>
+        <span style=${{color:"#9ca3af"}}>${b.l}</span>
+        <span style=${{color:"#d1d5db",fontFamily:"monospace"}}>${b.n}</span>
+      </span>`)}
+    </div>
+  </div>`;
 }
 
 function SquadPanel({team}){
   const sq=SQUADS[team];
   const counts=useMemo(()=>sq?getLeagueCounts(sq):{},[team]);
-  if(!sq)return<p style={{fontSize:"12px",color:"#4b5563",fontStyle:"italic"}}>Squad data limited</p>;
-  return(<div><div style={{marginBottom:"8px"}}><LeagueBar counts={counts} total={sq.length}/></div>{LEAGUES.map(lg=>{const lp=sq.filter(p=>p.league===lg);if(!lp.length)return null;return(<div key={lg} style={{marginBottom:"8px"}}><div style={{display:"flex",alignItems:"center",gap:"4px",marginBottom:"3px"}}><div style={{width:"6px",height:"6px",borderRadius:"50%",background:LC[lg],flexShrink:0}}/><span style={{fontSize:"10px",fontWeight:600,color:LC[lg]==="#292524"?"#6b7280":LC[lg]}}>{lg} ({lp.length})</span></div><div style={{display:"flex",flexWrap:"wrap"}}>{lp.map(p=><PlayerTag key={p.name+p.club} p={p}/>)}</div></div>);})}</div>);
+  if(!sq)return html`<p style=${{fontSize:"12px",color:"#4b5563",fontStyle:"italic"}}>Squad data limited</p>`;
+  return html`<div>
+    <div style=${{marginBottom:"8px"}}><${LeagueBar} counts=${counts} total=${sq.length}/></div>
+    ${LEAGUES.map(lg=>{
+      const lp=sq.filter(p=>p.league===lg);if(!lp.length)return null;
+      return html`<div key=${lg} style=${{marginBottom:"8px"}}>
+        <div style=${{display:"flex",alignItems:"center",gap:"4px",marginBottom:"3px"}}>
+          <div style=${{width:"6px",height:"6px",borderRadius:"50%",background:LC[lg],flexShrink:0}}/>
+          <span style=${{fontSize:"10px",fontWeight:600,color:LC[lg]==="#292524"?"#6b7280":LC[lg]}}>${lg} (${lp.length})</span>
+        </div>
+        <div style=${{display:"flex",flexWrap:"wrap"}}>
+          ${lp.map(p=>html`<span key=${p.name+p.club} style=${{display:"inline-flex",alignItems:"center",gap:"3px",padding:"2px 6px",borderRadius:"4px",fontSize:"11px",marginRight:"3px",marginBottom:"3px",backgroundColor:LC[p.league]+"28",color:"#cbd5e1",border:"1px solid "+LC[p.league]+"44"}} title=${p.club}>
+            <span style=${{opacity:0.4,fontSize:"9px"}}>${p.pos}</span>${p.name}<span style=${{opacity:0.3,fontSize:"9px"}}>${p.club}</span>
+          </span>`)}
+        </div>
+      </div>`;
+    })}
+  </div>`;
 }
 
 function FeedStatus({status,updated,reload}){
-  return(<div style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px",borderRadius:"8px",marginBottom:"16px",fontSize:"12px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)"}}>
-    {status==="loading"&&<><span style={{width:"8px",height:"8px",borderRadius:"50%",background:"#60a5fa",flexShrink:0}} className="animate-pulse"/><span style={{color:"#93c5fd"}}>Loading from openfootball…</span></>}
-    {status==="done"&&<><span style={{width:"8px",height:"8px",borderRadius:"50%",background:"#4ade80",flexShrink:0}}/><span style={{color:"#4ade80"}}>openfootball · live</span>{updated&&<span style={{color:"#4b5563",marginLeft:"4px"}}>· {updated.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}</span>}</>}
-    {status==="error"&&<><span style={{width:"8px",height:"8px",borderRadius:"50%",background:"#f87171",flexShrink:0}}/><span style={{color:"#f87171"}}>Feed unavailable</span></>}
-    <button onClick={reload} style={{marginLeft:"auto",padding:"3px 8px",borderRadius:"4px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",color:"#9ca3af",cursor:"pointer",fontSize:"12px"}}>↻</button>
-  </div>);
+  return html`<div style=${{display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px",borderRadius:"8px",marginBottom:"16px",fontSize:"12px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)"}}>
+    ${status==="loading"&&html`<><span class="pulse" style=${{width:"8px",height:"8px",borderRadius:"50%",background:"#60a5fa",flexShrink:0}}/><span style=${{color:"#93c5fd"}}>Loading from openfootball…</span></>`}
+    ${status==="done"&&html`<><span style=${{width:"8px",height:"8px",borderRadius:"50%",background:"#4ade80",flexShrink:0}}/><span style=${{color:"#4ade80"}}>openfootball · live</span>${updated&&html`<span style=${{color:"#4b5563",marginLeft:"4px"}}>· ${updated.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}</span>`}</>`}
+    ${status==="error"&&html`<><span style=${{width:"8px",height:"8px",borderRadius:"50%",background:"#f87171",flexShrink:0}}/><span style=${{color:"#f87171"}}>Feed unavailable</span></>`}
+    <button onClick=${reload} style=${{marginLeft:"auto",padding:"3px 8px",borderRadius:"4px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",color:"#9ca3af",cursor:"pointer",fontSize:"12px",fontFamily:"inherit"}}>↻</button>
+  </div>`;
 }
 
 // ─── MATCH CARD ──────────────────────────────────────────────────────────────
@@ -215,250 +263,268 @@ function MatchCard({entry,todayISO,showSquads=true}){
   const r1=FIFA_RANKINGS[home],r2=FIFA_RANKINGS[away];
   const dateStr=date?new Date(date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}):"";
   const barBg=status==="played"?"rgba(75,85,99,0.12)":status==="today"?"rgba(217,119,6,0.15)":"rgba(30,58,95,0.10)";
-  const barBorder=status==="today"?"1px solid rgba(217,119,6,0.4)":"1px solid rgba(255,255,255,0.07)";
+  const border=status==="today"?"1px solid rgba(217,119,6,0.4)":"1px solid rgba(255,255,255,0.07)";
   const sColor=status==="played"?"#6b7280":status==="today"?"#f59e0b":"#3b82f6";
   const sLabel=status==="played"?"FT":status==="today"?"TODAY":"Upcoming";
-  return(
-    <div style={{borderRadius:"8px",marginBottom:"8px",overflow:"hidden",border:barBorder,background:"rgba(255,255,255,0.03)"}}>
-      <div style={{cursor:"pointer"}} onClick={()=>setOpen(o=>!o)}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 12px",background:barBg,borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-            <span style={{fontSize:"11px",fontWeight:700,color:sColor}}>{sLabel}</span>
-            {dateStr&&<span style={{fontSize:"11px",color:"#6b7280"}}>{dateStr}</span>}
-            {time&&<span style={{fontSize:"11px",color:"#9ca3af"}}>{time}</span>}
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-            <span style={{fontSize:"11px",color:"#374151",maxWidth:"110px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ground||round||""}</span>
-            {score&&<div style={{display:"flex",flexDirection:"column",alignItems:"center"}}><span style={{fontSize:"14px",fontWeight:700,color:"#fff",background:"rgba(0,0,0,0.3)",padding:"2px 8px",borderRadius:"4px"}}>{score}</span>{ht&&<span style={{fontSize:"9px",color:"#4b5563"}}>{ht} HT</span>}</div>}
-            <span style={{fontSize:"11px",color:"#4b5563"}}>{open?"▲":"▼"}</span>
-          </div>
+  return html`<div style=${{borderRadius:"8px",marginBottom:"8px",overflow:"hidden",border:border,background:"rgba(255,255,255,0.03)"}}>
+    <div style=${{cursor:"pointer"}} onClick=${()=>setOpen(o=>!o)}>
+      <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 12px",background:barBg,borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+        <div style=${{display:"flex",alignItems:"center",gap:"8px"}}>
+          <span style=${{fontSize:"11px",fontWeight:700,color:sColor}}>${sLabel}</span>
+          ${dateStr&&html`<span style=${{fontSize:"11px",color:"#6b7280"}}>${dateStr}</span>`}
+          ${time&&html`<span style=${{fontSize:"11px",color:"#9ca3af"}}>${time}</span>`}
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"10px 12px"}}>
-          <div style={{flex:1,display:"flex",alignItems:"center",gap:"8px",minWidth:0}}>
-            <span style={{fontSize:"22px",flexShrink:0}}>{FLAG[home]||"🏳"}</span>
-            <div style={{minWidth:0}}><div style={{fontSize:"14px",fontWeight:hWon?700:500,color:hWon?"#fff":"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{home}</div>{r1&&<div style={{fontSize:"10px",color:"#6b7280"}}>FIFA #{r1}</div>}</div>
-          </div>
-          <div style={{fontSize:"11px",fontWeight:700,color:"#4b5563",padding:"0 4px"}}>VS</div>
-          <div style={{flex:1,display:"flex",alignItems:"center",gap:"8px",minWidth:0,justifyContent:"flex-end"}}>
-            <div style={{minWidth:0,textAlign:"right"}}><div style={{fontSize:"14px",fontWeight:aWon?700:500,color:aWon?"#fff":"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{away}</div>{r2&&<div style={{fontSize:"10px",color:"#6b7280"}}>FIFA #{r2}</div>}</div>
-            <span style={{fontSize:"22px",flexShrink:0}}>{FLAG[away]||"🏳"}</span>
-          </div>
+        <div style=${{display:"flex",alignItems:"center",gap:"8px"}}>
+          <span style=${{fontSize:"11px",color:"#374151",maxWidth:"100px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>${ground||round||""}</span>
+          ${score&&html`<div style=${{display:"flex",flexDirection:"column",alignItems:"center"}}>
+            <span style=${{fontSize:"14px",fontWeight:700,color:"#fff",background:"rgba(0,0,0,0.3)",padding:"2px 8px",borderRadius:"4px"}}>${score}</span>
+            ${ht&&html`<span style=${{fontSize:"9px",color:"#4b5563"}}>${ht} HT</span>`}
+          </div>`}
+          <span style=${{fontSize:"11px",color:"#4b5563"}}>${open?"▲":"▼"}</span>
         </div>
       </div>
-      {open&&<div style={{borderTop:"1px solid rgba(255,255,255,0.05)",padding:"12px"}}>
-        {(goals1.length>0||goals2.length>0)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"12px"}}><div>{goals1.map((g,i)=><div key={i} style={{fontSize:"11px",color:"#9ca3af",lineHeight:"1.8"}}>{g.owngoal?"⚽ OG ":g.penalty?"⚽ P ":"⚽ "}{g.name} <span style={{color:"#4b5563"}}>{g.minute}'</span></div>)}</div><div style={{textAlign:"right"}}>{goals2.map((g,i)=><div key={i} style={{fontSize:"11px",color:"#9ca3af",lineHeight:"1.8"}}><span style={{color:"#4b5563"}}>{g.minute}'</span> {g.name} {g.owngoal?"OG ⚽":g.penalty?"P ⚽":"⚽"}</div>)}</div></div>}
-        {showSquads&&stage==="group"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>{[home,away].map(team=><div key={team} style={{minWidth:0}}><div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"8px"}}><span>{FLAG[team]||"🏳"}</span><span style={{fontSize:"11px",fontWeight:600,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{team}</span>{FIFA_RANKINGS[team]&&<span style={{fontSize:"10px",color:"#6b7280"}}>#{FIFA_RANKINGS[team]}</span>}</div><SquadPanel team={team}/></div>)}</div>}
-      </div>}
+      <div style=${{display:"flex",alignItems:"center",gap:"8px",padding:"10px 12px"}}>
+        <div style=${{flex:1,display:"flex",alignItems:"center",gap:"8px",minWidth:0}}>
+          <span style=${{fontSize:"22px",flexShrink:0}}>${FLAG[home]||"🏳"}</span>
+          <div style=${{minWidth:0}}>
+            <div class="truncate" style=${{fontSize:"14px",fontWeight:hWon?700:500,color:hWon?"#fff":"#e2e8f0"}}>${home}</div>
+            ${r1&&html`<div style=${{fontSize:"10px",color:"#6b7280"}}>FIFA #${r1}</div>`}
+          </div>
+        </div>
+        <div style=${{fontSize:"11px",fontWeight:700,color:"#4b5563",padding:"0 4px"}}>VS</div>
+        <div style=${{flex:1,display:"flex",alignItems:"center",gap:"8px",minWidth:0,justifyContent:"flex-end"}}>
+          <div style=${{minWidth:0,textAlign:"right"}}>
+            <div class="truncate" style=${{fontSize:"14px",fontWeight:aWon?700:500,color:aWon?"#fff":"#e2e8f0"}}>${away}</div>
+            ${r2&&html`<div style=${{fontSize:"10px",color:"#6b7280"}}>FIFA #${r2}</div>`}
+          </div>
+          <span style=${{fontSize:"22px",flexShrink:0}}>${FLAG[away]||"🏳"}</span>
+        </div>
+      </div>
     </div>
-  );
+    ${open&&html`<div style=${{borderTop:"1px solid rgba(255,255,255,0.05)",padding:"12px"}}>
+      ${(goals1.length>0||goals2.length>0)&&html`<div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"12px"}}>
+        <div>${goals1.map((g,i)=>html`<div key=${i} style=${{fontSize:"11px",color:"#9ca3af",lineHeight:"1.8"}}>${g.owngoal?"⚽ OG ":g.penalty?"⚽ P ":"⚽ "}${g.name} <span style=${{color:"#4b5563"}}>${g.minute}'</span></div>`)}</div>
+        <div style=${{textAlign:"right"}}>${goals2.map((g,i)=>html`<div key=${i} style=${{fontSize:"11px",color:"#9ca3af",lineHeight:"1.8"}}><span style=${{color:"#4b5563"}}>${g.minute}'</span> ${g.name} ${g.owngoal?"OG ⚽":g.penalty?"P ⚽":"⚽"}</div>`)}</div>
+      </div>`}
+      ${showSquads&&stage==="group"&&html`<div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+        ${[home,away].map(team=>html`<div key=${team} style=${{minWidth:0}}>
+          <div style=${{display:"flex",alignItems:"center",gap:"6px",marginBottom:"8px"}}>
+            <span>${FLAG[team]||"🏳"}</span>
+            <span class="truncate" style=${{fontSize:"11px",fontWeight:600,color:"#e2e8f0"}}>${team}</span>
+            ${FIFA_RANKINGS[team]&&html`<span style=${{fontSize:"10px",color:"#6b7280"}}>#${FIFA_RANKINGS[team]}</span>`}
+          </div>
+          <${SquadPanel} team=${team}/>
+        </div>`)}
+      </div>`}
+    </div>`}
+  </div>`;
 }
 
 // ─── STANDINGS TABLE ─────────────────────────────────────────────────────────
 function StandingsTable({groupKey,byKey}){
   const rows=useMemo(()=>calcStandings(groupKey,byKey),[groupKey,byKey]);
-  const cols="1.5rem 1fr 2.5rem 2rem 2rem 2rem 2rem 2rem 2.5rem";
-  return(
-    <div style={{borderRadius:"8px",overflow:"hidden",marginBottom:"16px",border:"1px solid rgba(255,255,255,0.08)"}}>
-      <div style={{display:"grid",gridTemplateColumns:cols,padding:"6px 12px",background:"rgba(255,255,255,0.04)",fontSize:"11px",fontWeight:600,color:"#4b5563"}}>
-        <span>#</span><span>Team</span><span style={{textAlign:"center"}}>MP</span><span style={{textAlign:"center"}}>W</span><span style={{textAlign:"center"}}>D</span><span style={{textAlign:"center"}}>L</span><span style={{textAlign:"center"}}>GF</span><span style={{textAlign:"center"}}>GA</span><span style={{textAlign:"center",color:"#d1d5db"}}>PTS</span>
-      </div>
-      {rows.map((r,i)=>(
-        <div key={r.team} style={{display:"grid",gridTemplateColumns:cols,alignItems:"center",padding:"8px 12px",borderTop:"1px solid rgba(255,255,255,0.05)",fontSize:"12px",background:i<2?"rgba(59,130,246,0.06)":i===2?"rgba(251,191,36,0.04)":"transparent"}}>
-          <span style={{fontFamily:"monospace",color:"#4b5563"}}>{i+1}</span>
-          <div style={{display:"flex",alignItems:"center",gap:"6px",minWidth:0}}>
-            <div style={{width:"3px",height:"14px",borderRadius:"2px",background:i<2?"#3b82f6":i===2?"#f59e0b":"transparent",flexShrink:0}}/>
-            <span style={{fontSize:"16px",flexShrink:0}}>{FLAG[r.team]||"🏳"}</span>
-            <span style={{color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.team}</span>
-          </div>
-          <span style={{textAlign:"center",color:"#6b7280"}}>{r.mp}</span>
-          <span style={{textAlign:"center",color:"#4ade80"}}>{r.w}</span>
-          <span style={{textAlign:"center",color:"#6b7280"}}>{r.d}</span>
-          <span style={{textAlign:"center",color:"#f87171"}}>{r.l}</span>
-          <span style={{textAlign:"center",color:"#d1d5db"}}>{r.gf}</span>
-          <span style={{textAlign:"center",color:"#d1d5db"}}>{r.ga}</span>
-          <span style={{textAlign:"center",fontWeight:700,color:"#fff"}}>{r.pts}</span>
-        </div>
-      ))}
-      <div style={{display:"flex",gap:"16px",padding:"6px 12px",borderTop:"1px solid rgba(255,255,255,0.05)",background:"rgba(255,255,255,0.02)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:"6px"}}><div style={{width:"8px",height:"8px",borderRadius:"50%",background:"#3b82f6"}}/><span style={{fontSize:"10px",color:"#4b5563"}}>Advances (Top 2)</span></div>
-        <div style={{display:"flex",alignItems:"center",gap:"6px"}}><div style={{width:"8px",height:"8px",borderRadius:"50%",background:"#f59e0b"}}/><span style={{fontSize:"10px",color:"#4b5563"}}>Potential best 3rd</span></div>
-      </div>
+  const cols="1.5rem 1fr 2.2rem 1.8rem 1.8rem 1.8rem 1.8rem 1.8rem 2.2rem";
+  return html`<div style=${{...S.section,marginBottom:"16px"}}>
+    <div style=${{display:"grid",gridTemplateColumns:cols,padding:"6px 10px",background:"rgba(255,255,255,0.04)",fontSize:"10px",fontWeight:600,color:"#4b5563"}}>
+      <span>#</span><span>Team</span><span style=${{textAlign:"center"}}>MP</span><span style=${{textAlign:"center"}}>W</span><span style=${{textAlign:"center"}}>D</span><span style=${{textAlign:"center"}}>L</span><span style=${{textAlign:"center"}}>GF</span><span style=${{textAlign:"center"}}>GA</span><span style=${{textAlign:"center",color:"#d1d5db"}}>PTS</span>
     </div>
-  );
+    ${rows.map((r,i)=>html`<div key=${r.team} style=${{display:"grid",gridTemplateColumns:cols,alignItems:"center",padding:"7px 10px",borderTop:"1px solid rgba(255,255,255,0.05)",fontSize:"12px",background:i<2?"rgba(59,130,246,0.06)":i===2?"rgba(251,191,36,0.04)":"transparent"}}>
+      <span style=${{fontFamily:"monospace",color:"#4b5563"}}>${i+1}</span>
+      <div style=${{display:"flex",alignItems:"center",gap:"4px",minWidth:0}}>
+        <div style=${{width:"3px",height:"14px",borderRadius:"2px",background:i<2?"#3b82f6":i===2?"#f59e0b":"transparent",flexShrink:0}}/>
+        <span style=${{fontSize:"15px",flexShrink:0}}>${FLAG[r.team]||"🏳"}</span>
+        <span class="truncate" style=${{color:"#e2e8f0"}}>${r.team}</span>
+      </div>
+      <span style=${{textAlign:"center",color:"#6b7280"}}>${r.mp}</span>
+      <span style=${{textAlign:"center",color:"#4ade80"}}>${r.w}</span>
+      <span style=${{textAlign:"center",color:"#6b7280"}}>${r.d}</span>
+      <span style=${{textAlign:"center",color:"#f87171"}}>${r.l}</span>
+      <span style=${{textAlign:"center",color:"#d1d5db"}}>${r.gf}</span>
+      <span style=${{textAlign:"center",color:"#d1d5db"}}>${r.ga}</span>
+      <span style=${{textAlign:"center",fontWeight:700,color:"#fff"}}>${r.pts}</span>
+    </div>`)}
+    <div style=${{display:"flex",gap:"12px",padding:"5px 10px",borderTop:"1px solid rgba(255,255,255,0.05)",background:"rgba(255,255,255,0.02)"}}>
+      <div style=${{display:"flex",alignItems:"center",gap:"5px"}}><div style=${{width:"7px",height:"7px",borderRadius:"50%",background:"#3b82f6"}}/><span style=${{fontSize:"10px",color:"#4b5563"}}>Advances</span></div>
+      <div style=${{display:"flex",alignItems:"center",gap:"5px"}}><div style=${{width:"7px",height:"7px",borderRadius:"50%",background:"#f59e0b"}}/><span style=${{fontSize:"10px",color:"#4b5563"}}>Possible best 3rd</span></div>
+    </div>
+  </div>`;
 }
 
 // ─── GROUPS VIEW ─────────────────────────────────────────────────────────────
 function GroupsView({byKey,todayISO}){
   const[g,setG]=useState("A");
-  const entries=useMemo(()=>{const teams=GROUPS[g],out=[];for(let i=0;i<teams.length;i++)for(let j=i+1;j<teams.length;j++){const e=byKey?.[pkey(teams[i],teams[j])];if(e)out.push(e);}return out.sort((a,b)=>(a.date||"").localeCompare(b.date||""));},[g,byKey]);
-  return(
-    <div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}}>
-        {"ABCDEFGHIJKL".split("").map(grp=>(
-          <button key={grp} onClick={()=>setG(grp)} style={{width:"36px",height:"36px",borderRadius:"8px",fontSize:"14px",fontWeight:700,cursor:"pointer",background:g===grp?"rgba(59,130,246,0.3)":"rgba(255,255,255,0.05)",border:g===grp?"1px solid rgba(59,130,246,0.6)":"1px solid rgba(255,255,255,0.1)",color:g===grp?"#93c5fd":"#94a3b8"}}>{grp}</button>
-        ))}
-      </div>
-      <StandingsTable groupKey={g} byKey={byKey}/>
-      <div style={{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:"8px"}}>Matches — tap to expand</div>
-      {entries.map((e,i)=><MatchCard key={i} entry={e} todayISO={todayISO}/>)}
+  const entries=useMemo(()=>{
+    const teams=GROUPS[g],out=[];
+    for(let i=0;i<teams.length;i++)for(let j=i+1;j<teams.length;j++){const e=byKey&&byKey[pkey(teams[i],teams[j])];if(e)out.push(e);}
+    return out.sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+  },[g,byKey]);
+  return html`<div>
+    <div style=${{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}}>
+      ${"ABCDEFGHIJKL".split("").map(grp=>html`<button key=${grp} onClick=${()=>setG(grp)} style=${S.groupBtn(g===grp)}>${grp}</button>`)}
     </div>
-  );
+    <${StandingsTable} groupKey=${g} byKey=${byKey}/>
+    <div style=${{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:"8px"}}>Matches — tap to expand</div>
+    ${entries.map((e,i)=>html`<${MatchCard} key=${i} entry=${e} todayISO=${todayISO}/>`)}
+  </div>`;
 }
 
 // ─── SCHEDULE VIEW ───────────────────────────────────────────────────────────
 const SL={group:"Group",r32:"R32",r16:"R16",qf:"QF",sf:"SF","3rd":"3rd",final:"FINAL"};
-const STAGE_OPTS=[{id:"all",l:"All"},{id:"group",l:"Group"},{id:"r32",l:"R32"},{id:"r16",l:"R16"},{id:"qf",l:"QF"},{id:"sf",l:"SF"},{id:"3rd",l:"3rd"},{id:"final",l:"Final"}];
+const SOPTS=[{id:"all",l:"All"},{id:"group",l:"Group"},{id:"r32",l:"R32"},{id:"r16",l:"R16"},{id:"qf",l:"QF"},{id:"sf",l:"SF"},{id:"3rd",l:"3rd"},{id:"final",l:"Final"}];
+
 function ScheduleView({all,todayISO}){
   const[sf,setSF]=useState("all");const[tf,setTF]=useState("");
-  const byDate=useMemo(()=>{const lower=tf.toLowerCase(),out={};(all||[]).filter(e=>{if(sf!=="all"&&e.stage!==sf)return false;if(lower&&!e.home?.toLowerCase().includes(lower)&&!e.away?.toLowerCase().includes(lower))return false;return true;}).forEach(e=>{const d=e.date||"TBD";if(!out[d])out[d]=[];out[d].push(e);});return out;},[all,sf,tf]);
-  return(
-    <div>
-      <div style={{marginBottom:"12px"}}><input value={tf} onChange={e=>setTF(e.target.value)} placeholder="Filter by team…" style={{width:"100%",padding:"6px 12px",borderRadius:"6px",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",fontSize:"14px",outline:"none"}}/></div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}}>
-        {STAGE_OPTS.map(s=><button key={s.id} onClick={()=>setSF(s.id)} style={{padding:"4px 8px",borderRadius:"4px",fontSize:"11px",cursor:"pointer",background:sf===s.id?"rgba(59,130,246,0.3)":"rgba(255,255,255,0.05)",border:sf===s.id?"1px solid rgba(59,130,246,0.5)":"1px solid rgba(255,255,255,0.1)",color:sf===s.id?"#93c5fd":"#94a3b8",fontWeight:sf===s.id?600:400}}>{s.l}</button>)}
-      </div>
-      {Object.entries(byDate).sort(([a],[b])=>a.localeCompare(b)).map(([date,entries])=>{
-        const isToday=date===todayISO;const d=new Date(date+"T12:00:00");
-        return(
-          <div key={date} id={isToday?"today-anchor":undefined} style={{marginBottom:"20px",scrollMarginTop:isToday?"16px":undefined}}>
-            <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"8px"}}>
-              <div style={{flex:1,height:"1px",background:isToday?"rgba(217,119,6,0.3)":"rgba(255,255,255,0.07)"}}/>
-              <span style={{fontSize:"11px",fontWeight:600,color:isToday?"#fbbf24":"#9ca3af",flexShrink:0}}>{isToday&&<span style={{marginRight:"4px"}}>★ TODAY —</span>}{d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</span>
-              {SL[entries[0]?.stage]&&<span style={{fontSize:"11px",color:"#374151",flexShrink:0}}>{SL[entries[0].stage]}</span>}
-              <div style={{flex:1,height:"1px",background:isToday?"rgba(217,119,6,0.3)":"rgba(255,255,255,0.07)"}}/>
-            </div>
-            {entries.map((e,i)=><MatchCard key={i} entry={e} todayISO={todayISO} showSquads={e.stage==="group"}/>)}
-          </div>
-        );
-      })}
+  const byDate=useMemo(()=>{
+    const lower=tf.toLowerCase(),out={};
+    (all||[]).filter(e=>{
+      if(sf!=="all"&&e.stage!==sf)return false;
+      if(lower&&!e.home.toLowerCase().includes(lower)&&!e.away.toLowerCase().includes(lower))return false;
+      return true;
+    }).forEach(e=>{const d=e.date||"TBD";if(!out[d])out[d]=[];out[d].push(e);});
+    return out;
+  },[all,sf,tf]);
+  return html`<div>
+    <div style=${{marginBottom:"12px"}}><input value=${tf} onInput=${e=>setTF(e.target.value)} placeholder="Filter by team…" style=${S.input}/></div>
+    <div style=${{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}}>
+      ${SOPTS.map(s=>html`<button key=${s.id} onClick=${()=>setSF(s.id)} style=${S.btn(sf===s.id)}>${s.l}</button>`)}
     </div>
-  );
+    ${Object.entries(byDate).sort(([a],[b])=>a.localeCompare(b)).map(([date,entries])=>{
+      const isToday=date===todayISO;
+      const d=new Date(date+"T12:00:00");
+      const label=d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+      return html`<div key=${date} id=${isToday?"today-anchor":undefined} style=${{marginBottom:"20px",scrollMarginTop:"16px"}}>
+        <div style=${{display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"}}>
+          <div style=${{flex:1,height:"1px",background:isToday?"rgba(217,119,6,0.3)":"rgba(255,255,255,0.07)"}}/>
+          <span style=${{fontSize:"11px",fontWeight:600,color:isToday?"#fbbf24":"#9ca3af",flexShrink:0}}>
+            ${isToday&&html`<span style=${{marginRight:"4px"}}>★ TODAY —</span>`}${label}
+          </span>
+          ${SL[entries[0].stage]&&html`<span style=${{fontSize:"11px",color:"#374151",flexShrink:0}}>${SL[entries[0].stage]}</span>`}
+          <div style=${{flex:1,height:"1px",background:isToday?"rgba(217,119,6,0.3)":"rgba(255,255,255,0.07)"}}/>
+        </div>
+        ${entries.map((e,i)=>html`<${MatchCard} key=${i} entry=${e} todayISO=${todayISO} showSquads=${e.stage==="group"}/>`)}
+      </div>`;
+    })}
+  </div>`;
 }
 
-// ─── BRACKET ─────────────────────────────────────────────────────────────────
+// ─── BRACKET VIEW ────────────────────────────────────────────────────────────
 function BracketSlot({entry,small=false}){
-  if(!entry)return<div style={{width:small?130:150,height:small?52:64,borderRadius:"6px",border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.02)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{fontSize:"11px",color:"#374151"}}>TBD</span></div>;
-  const{home,away,score}=entry;const sc=parseScore(score);const hWon=sc?sc.h>sc.a:false;const aWon=sc?sc.a>sc.h:false;
-  const date=entry.date?new Date(entry.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
-  return(
-    <div style={{width:small?130:150,borderRadius:"6px",overflow:"hidden",border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",flexShrink:0}}>
-      {[{t:home,w:hWon,s:score?.[0]},{t:away,w:aWon,s:score?.[2]}].map(({t,w,s},idx)=>(
-        <div key={idx} style={{display:"flex",alignItems:"center",gap:"4px",padding:"4px 8px",borderBottom:idx===0?"1px solid rgba(255,255,255,0.07)":"none",background:w?"rgba(59,130,246,0.15)":"transparent"}}>
-          <span style={{fontSize:small?11:13,flexShrink:0}}>{FLAG[t]||"❓"}</span>
-          <span style={{fontSize:small?10:11,color:w?"#e2e8f0":"#9ca3af",fontWeight:w?700:400,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t}</span>
-          {score&&<span style={{fontSize:small?11:12,fontWeight:700,color:w?"#fff":"#6b7280",minWidth:"12px",textAlign:"right"}}>{s}</span>}
-        </div>
-      ))}
-      {date&&!small&&<div style={{padding:"1px 8px 3px",background:"rgba(0,0,0,0.2)",fontSize:"9px",color:"#374151"}}>{date} {entry.time||""}</div>}
-    </div>
-  );
+  const e=entry||{};const home=e.home||"TBD";const away=e.away||"TBD";
+  const sc=parseScore(e.score||null);const hWon=sc?sc.h>sc.a:false;const aWon=sc?sc.a>sc.h:false;
+  const date=e.date?new Date(e.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
+  const w=small?128:148;
+  return html`<div style=${{width:w+"px",borderRadius:"6px",overflow:"hidden",border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",flexShrink:0}}>
+    ${[{t:home,won:hWon,s:e.score?e.score[0]:null},{t:away,won:aWon,s:e.score?e.score[2]:null}].map(({t,won,s},idx)=>html`
+      <div key=${idx} style=${{display:"flex",alignItems:"center",gap:"4px",padding:"4px 7px",borderBottom:idx===0?"1px solid rgba(255,255,255,0.07)":"none",background:won?"rgba(59,130,246,0.15)":"transparent"}}>
+        <span style=${{fontSize:small?11:13,flexShrink:0}}>${FLAG[t]||"❓"}</span>
+        <span class="truncate" style=${{fontSize:small?10:11,color:won?"#e2e8f0":"#9ca3af",fontWeight:won?700:400,flex:1}}>${t}</span>
+        ${e.score&&html`<span style=${{fontSize:small?11:12,fontWeight:700,color:won?"#fff":"#6b7280",minWidth:"12px",textAlign:"right"}}>${s}</span>`}
+      </div>
+    `)}
+    ${date&&!small&&html`<div style=${{padding:"1px 7px 3px",background:"rgba(0,0,0,0.2)",fontSize:"9px",color:"#374151"}}>${date} ${e.time||""}</div>`}
+  </div>`;
 }
 
 function Connector({count,slotH,gap}){
   const totalH=count*slotH+(count-1)*gap;const arms=[];
-  for(let i=0;i<count;i+=2){const ty=i*(slotH+gap)+slotH/2,by=(i+1)*(slotH+gap)+slotH/2,my=(ty+by)/2;arms.push(<g key={i}><path d={`M0,${ty} H10 V${my}`} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5"/><path d={`M0,${by} H10 V${my}`} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5"/><path d={`M10,${my} H20`} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5"/></g>);}
-  return<svg width="20" height={totalH} style={{flexShrink:0}}>{arms}</svg>;
+  for(let i=0;i<count;i+=2){
+    const ty=i*(slotH+gap)+slotH/2,by=(i+1)*(slotH+gap)+slotH/2,my=(ty+by)/2;
+    arms.push(html`<g key=${i}>
+      <path d=${"M0,"+ty+" H10 V"+my} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5"/>
+      <path d=${"M0,"+by+" H10 V"+my} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5"/>
+      <path d=${"M10,"+my+" H20"} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5"/>
+    </g>`);
+  }
+  return html`<svg width="20" height=${totalH} style=${{flexShrink:0}}>${arms}</svg>`;
 }
 
 const SH=64,SHS=52,GAP=10;
-const BL_LEFT={r32:[74,76,73,75,78,77,81,82],r16:[89,90,91,92],qf:[97,99]};
-const BL_RIGHT={r32:[83,84,85,87,80,86,88,79],r16:[93,94,95,96],qf:[98,100]};
+const BL={r32:[74,76,73,75,78,77,81,82],r16:[89,90,91,92],qf:[97,99]};
+const BR={r32:[83,84,85,87,80,86,88,79],r16:[93,94,95,96],qf:[98,100]};
 
 function BracketHalf({byNum,nums,small=false}){
   const sh=small?SHS:SH;
-  return(<div style={{display:"flex",alignItems:"center"}}><div style={{display:"flex",flexDirection:"column",gap:`${GAP}px`}}>{nums.map(n=><BracketSlot key={n} entry={byNum?.[n]} small={small}/>)}</div><Connector count={nums.length} slotH={sh} gap={GAP}/></div>);
+  return html`<div style=${{display:"flex",alignItems:"center"}}>
+    <div style=${{display:"flex",flexDirection:"column",gap:GAP+"px"}}>
+      ${nums.map(n=>html`<${BracketSlot} key=${n} entry=${byNum&&byNum[n]} small=${small}/>`)}
+    </div>
+    <${Connector} count=${nums.length} slotH=${sh} gap=${GAP}/>
+  </div>`;
 }
 
 function BracketView({byNum,todayISO}){
   const[view,setView]=useState("full");
-  const r32All=[...new Set([...BL_LEFT.r32,...BL_RIGHT.r32])].sort((a,b)=>a-b);
-  return(
-    <div>
-      <div style={{display:"flex",gap:"8px",marginBottom:"12px"}}>
-        {[{id:"full",l:"🏆 Full Bracket"},{id:"r32",l:"Round of 32"}].map(v=>(
-          <button key={v.id} onClick={()=>setView(v.id)} style={{padding:"6px 12px",borderRadius:"8px",fontSize:"12px",fontWeight:500,cursor:"pointer",background:view===v.id?"rgba(59,130,246,0.3)":"rgba(255,255,255,0.05)",border:view===v.id?"1px solid rgba(59,130,246,0.6)":"1px solid rgba(255,255,255,0.1)",color:view===v.id?"#93c5fd":"#94a3b8"}}>{v.l}</button>
-        ))}
-      </div>
-      {view==="r32"&&<div>{r32All.map(n=>{const e=byNum?.[n];return e?<MatchCard key={n} entry={e} todayISO={todayISO} showSquads={false}/>:null;})}</div>}
-      {view==="full"&&(
-        <div>
-          <p style={{fontSize:"11px",color:"#4b5563",marginBottom:"8px"}}>← Scroll horizontally</p>
-          <div style={{overflowX:"auto",paddingBottom:"16px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:0,minWidth:"980px",padding:"4px 0"}}>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:0}}>
-                <div style={{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase",marginBottom:"8px",whiteSpace:"nowrap"}}>Round of 32</div>
-                <BracketHalf byNum={byNum} nums={BL_LEFT.r32} small/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:0}}>
-                <div style={{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase",marginBottom:"8px",whiteSpace:"nowrap"}}>Round of 16</div>
-                <BracketHalf byNum={byNum} nums={BL_LEFT.r16}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:0}}>
-                <div style={{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase",marginBottom:"8px"}}>QF</div>
-                <BracketHalf byNum={byNum} nums={BL_LEFT.qf}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"8px",minWidth:"160px",padding:"0 8px"}}>
-                <div style={{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase"}}>SF</div>
-                <BracketSlot entry={byNum?.[101]}/>
-                <div style={{width:"100%",height:"1px",background:"rgba(255,255,255,0.05)"}}/>
-                <div style={{fontSize:"11px",fontWeight:700,color:"#fbbf24"}}>🏆 FINAL</div>
-                <BracketSlot entry={byNum?.[104]}/>
-                <div style={{fontSize:"10px",color:"#6b7280"}}>3rd Place</div>
-                <BracketSlot entry={byNum?.[103]}/>
-                <div style={{width:"100%",height:"1px",background:"rgba(255,255,255,0.05)"}}/>
-                <div style={{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase"}}>SF</div>
-                <BracketSlot entry={byNum?.[102]}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:0}}>
-                <div style={{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase",marginBottom:"8px"}}>QF</div>
-                <BracketHalf byNum={byNum} nums={BL_RIGHT.qf}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:0}}>
-                <div style={{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase",marginBottom:"8px",whiteSpace:"nowrap"}}>Round of 16</div>
-                <BracketHalf byNum={byNum} nums={BL_RIGHT.r16}/>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:0}}>
-                <div style={{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase",marginBottom:"8px",whiteSpace:"nowrap"}}>Round of 32</div>
-                <BracketHalf byNum={byNum} nums={BL_RIGHT.r32} small/>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+  const r32All=[...new Set([...BL.r32,...BR.r32])].sort((a,b)=>a-b);
+  const colLabel=(t)=>html`<div style=${{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase",marginBottom:"8px",whiteSpace:"nowrap",textAlign:"center"}}>${t}</div>`;
+  return html`<div>
+    <div style=${{display:"flex",gap:"8px",marginBottom:"12px"}}>
+      ${[{id:"full",l:"🏆 Full Bracket"},{id:"r32",l:"Round of 32"}].map(v=>html`
+        <button key=${v.id} onClick=${()=>setView(v.id)} style=${{padding:"6px 14px",borderRadius:"8px",fontSize:"12px",fontWeight:500,cursor:"pointer",fontFamily:"inherit",background:view===v.id?"rgba(59,130,246,0.3)":"rgba(255,255,255,0.05)",border:view===v.id?"1px solid rgba(59,130,246,0.6)":"1px solid rgba(255,255,255,0.1)",color:view===v.id?"#93c5fd":"#94a3b8"}}>${v.l}</button>
+      `)}
     </div>
-  );
+    ${view==="r32"&&html`<div>
+      ${r32All.map(n=>{const e=byNum&&byNum[n];return e?html`<${MatchCard} key=${n} entry=${e} todayISO=${todayISO} showSquads=${false}/>`:null;})}
+    </div>`}
+    ${view==="full"&&html`<div>
+      <p style=${{fontSize:"11px",color:"#4b5563",marginBottom:"8px"}}>← Scroll to see full bracket</p>
+      <div style=${{overflowX:"auto",paddingBottom:"16px"}}>
+        <div style=${{display:"flex",alignItems:"center",minWidth:"980px",padding:"4px 0"}}>
+          <div style=${{display:"flex",flexDirection:"column",alignItems:"center"}}>${colLabel("Round of 32")}<${BracketHalf} byNum=${byNum} nums=${BL.r32} small=${true}/></div>
+          <div style=${{display:"flex",flexDirection:"column",alignItems:"center"}}>${colLabel("Round of 16")}<${BracketHalf} byNum=${byNum} nums=${BL.r16}/></div>
+          <div style=${{display:"flex",flexDirection:"column",alignItems:"center"}}>${colLabel("Quarters")}<${BracketHalf} byNum=${byNum} nums=${BL.qf}/></div>
+          <div style=${{display:"flex",flexDirection:"column",alignItems:"center",gap:"8px",minWidth:"160px",padding:"0 8px"}}>
+            <div style=${{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase"}}>SF</div>
+            <${BracketSlot} entry=${byNum&&byNum[101]}/>
+            <div style=${{width:"100%",height:"1px",background:"rgba(255,255,255,0.05)"}}/>
+            <div style=${{fontSize:"11px",fontWeight:700,color:"#fbbf24"}}>🏆 FINAL</div>
+            <${BracketSlot} entry=${byNum&&byNum[104]}/>
+            <div style=${{fontSize:"10px",color:"#6b7280"}}>3rd Place</div>
+            <${BracketSlot} entry=${byNum&&byNum[103]}/>
+            <div style=${{width:"100%",height:"1px",background:"rgba(255,255,255,0.05)"}}/>
+            <div style=${{fontSize:"10px",fontWeight:600,color:"#4b5563",textTransform:"uppercase"}}>SF</div>
+            <${BracketSlot} entry=${byNum&&byNum[102]}/>
+          </div>
+          <div style=${{display:"flex",flexDirection:"column",alignItems:"center"}}>${colLabel("Quarters")}<${BracketHalf} byNum=${byNum} nums=${BR.qf}/></div>
+          <div style=${{display:"flex",flexDirection:"column",alignItems:"center"}}>${colLabel("Round of 16")}<${BracketHalf} byNum=${byNum} nums=${BR.r16}/></div>
+          <div style=${{display:"flex",flexDirection:"column",alignItems:"center"}}>${colLabel("Round of 32")}<${BracketHalf} byNum=${byNum} nums=${BR.r32} small=${true}/></div>
+        </div>
+      </div>
+    </div>`}
+  </div>`;
 }
 
 // ─── RANKINGS VIEW ───────────────────────────────────────────────────────────
 function TeamRow({team}){
   const[open,setOpen]=useState(false);
   const sq=SQUADS[team];const counts=useMemo(()=>sq?getLeagueCounts(sq):{},[team]);const rank=FIFA_RANKINGS[team];
-  return(
-    <div onClick={()=>setOpen(o=>!o)} style={{borderRadius:"8px",cursor:"pointer",marginBottom:"6px",background:open?"rgba(59,130,246,0.08)":"rgba(255,255,255,0.03)",border:open?"1px solid rgba(59,130,246,0.35)":"1px solid rgba(255,255,255,0.06)"}}>
-      <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px"}}>
-        <span style={{fontSize:"11px",fontFamily:"monospace",color:rank<=5?"#fbbf24":rank<=15?"#94a3b8":"#4b5563",width:"20px",textAlign:"right",flexShrink:0}}>{rank}</span>
-        <span style={{fontSize:"20px",flexShrink:0}}>{FLAG[team]||"🏳"}</span>
-        <span style={{fontSize:"14px",fontWeight:500,color:"#e2e8f0",width:"144px",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{team}</span>
-        {sq?<div style={{flex:1,minWidth:0}}><LeagueBar counts={counts} total={sq.length}/></div>:<span style={{flex:1,fontSize:"11px",color:"#4b5563",fontStyle:"italic"}}>limited data</span>}
-        {sq&&<span style={{fontSize:"11px",color:"#4b5563",flexShrink:0,marginLeft:"4px"}}>{sq.length}</span>}
-        <span style={{fontSize:"11px",color:"#4b5563",flexShrink:0,marginLeft:"4px"}}>{open?"▲":"▼"}</span>
-      </div>
-      {open&&sq&&<div style={{padding:"0 12px 12px",borderTop:"1px solid rgba(255,255,255,0.05)"}}><SquadPanel team={team}/></div>}
+  return html`<div onClick=${()=>setOpen(o=>!o)} style=${{borderRadius:"8px",cursor:"pointer",marginBottom:"6px",background:open?"rgba(59,130,246,0.08)":"rgba(255,255,255,0.03)",border:open?"1px solid rgba(59,130,246,0.35)":"1px solid rgba(255,255,255,0.06)"}}>
+    <div style=${{display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px"}}>
+      <span style=${{fontSize:"11px",fontFamily:"monospace",color:rank<=5?"#fbbf24":rank<=15?"#94a3b8":"#4b5563",width:"20px",textAlign:"right",flexShrink:0}}>${rank}</span>
+      <span style=${{fontSize:"20px",flexShrink:0}}>${FLAG[team]||"🏳"}</span>
+      <span class="truncate" style=${{fontSize:"13px",fontWeight:500,color:"#e2e8f0",width:"140px",flexShrink:0}}>${team}</span>
+      ${sq?html`<div style=${{flex:1,minWidth:0}}><${LeagueBar} counts=${counts} total=${sq.length}/></div>`:html`<span style=${{flex:1,fontSize:"11px",color:"#4b5563",fontStyle:"italic"}}>limited data</span>`}
+      ${sq&&html`<span style=${{fontSize:"11px",color:"#4b5563",flexShrink:0,marginLeft:"4px"}}>${sq.length}</span>`}
+      <span style=${{fontSize:"11px",color:"#4b5563",flexShrink:0,marginLeft:"4px"}}>${open?"▲":"▼"}</span>
     </div>
-  );
+    ${open&&sq&&html`<div style=${{padding:"0 12px 12px",borderTop:"1px solid rgba(255,255,255,0.05)"}}><${SquadPanel} team=${team}/></div>`}
+  </div>`;
 }
 
 function RankingsView(){
   const[fl,setFL]=useState(null);const[search,setSearch]=useState("");
   const allTeams=useMemo(()=>Object.keys(FIFA_RANKINGS).sort((a,b)=>FIFA_RANKINGS[a]-FIFA_RANKINGS[b]),[]);
-  const filtered=useMemo(()=>allTeams.filter(t=>{if(search)return t.toLowerCase().includes(search.toLowerCase());if(fl){const sq=SQUADS[t];if(!sq)return false;const c=getLeagueCounts(sq);return(c[fl]||0)>0;}return true;}),[search,fl,allTeams]);
-  return(
-    <div>
-      <div style={{marginBottom:"12px"}}><input value={search} onChange={e=>{setSearch(e.target.value);setFL(null);}} placeholder="Search team…" style={{width:"100%",padding:"6px 12px",borderRadius:"6px",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",fontSize:"14px",outline:"none"}}/></div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}}>{LEAGUES.map(l=><button key={l} onClick={()=>{setFL(fl===l?null:l);setSearch("");}} style={{padding:"4px 8px",borderRadius:"4px",fontSize:"11px",cursor:"pointer",background:fl===l?LC[l]:"rgba(255,255,255,0.05)",border:`1px solid ${fl===l?LC[l]:"rgba(255,255,255,0.1)"}`,color:fl===l?"#fff":"#94a3b8",fontWeight:fl===l?600:400}}>{l}</button>)}</div>
-      {filtered.map(t=><TeamRow key={t} team={t}/>)}
+  const filtered=useMemo(()=>allTeams.filter(t=>{
+    if(search)return t.toLowerCase().includes(search.toLowerCase());
+    if(fl){const sq=SQUADS[t];if(!sq)return false;const c=getLeagueCounts(sq);return(c[fl]||0)>0;}
+    return true;
+  }),[search,fl,allTeams]);
+  return html`<div>
+    <div style=${{marginBottom:"12px"}}><input value=${search} onInput=${e=>{setSearch(e.target.value);setFL(null);}} placeholder="Search team…" style=${S.input}/></div>
+    <div style=${{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}}>
+      ${LEAGUES.map(l=>html`<button key=${l} onClick=${()=>{setFL(fl===l?null:l);setSearch("");}} style=${{padding:"4px 8px",borderRadius:"4px",fontSize:"11px",cursor:"pointer",fontFamily:"inherit",background:fl===l?LC[l]:"rgba(255,255,255,0.05)",border:"1px solid "+(fl===l?LC[l]:"rgba(255,255,255,0.1)"),color:fl===l?"#fff":"#94a3b8",fontWeight:fl===l?600:400}}>${l}</button>`)}
     </div>
-  );
+    ${filtered.map(t=>html`<${TeamRow} key=${t} team=${t}/>`)}
+  </div>`;
 }
 
 // ─── APP ─────────────────────────────────────────────────────────────────────
@@ -466,38 +532,36 @@ function App(){
   const[tab,setTab]=useState("schedule");
   const todayISO=useToday();
   const{data,status,updated,reload}=useWorldCup();
-  const byKey=data?.byKey||{};const byNum=data?.byNum||{};const all=data?.all||[];
+  const byKey=data?data.byKey:{};const byNum=data?data.byNum:{};const all=data?data.all:[];
   const todayCount=useMemo(()=>all.filter(e=>e.date===todayISO).length,[all,todayISO]);
   const TABS=[{id:"schedule",l:"📅 Schedule"},{id:"groups",l:"🔡 Groups"},{id:"bracket",l:"🏆 Bracket"},{id:"rankings",l:"⚽ Rankings"}];
-  return(
-    <div style={{background:"linear-gradient(160deg,#0a0f1e 0%,#0f172a 60%,#0a1628 100%)",minHeight:"100vh",fontFamily:"'Inter',system-ui,sans-serif",color:"#e2e8f0"}}>
-      <div style={{borderBottom:"1px solid rgba(255,255,255,0.07)",background:"rgba(255,255,255,0.02)",padding:"16px 16px 0"}}>
-        <div style={{maxWidth:"768px",margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"8px"}}>
-            <span style={{fontSize:"28px"}}>⚽</span>
-            <div style={{flex:1,minWidth:0}}>
-              <h1 style={{fontSize:"18px",fontWeight:700,color:"#fff",lineHeight:"1.2"}}>2026 FIFA World Cup</h1>
-              <p style={{fontSize:"11px",color:"#4b5563"}}>48 teams · 104 matches · Live via openfootball/worldcup.json</p>
-            </div>
-            {todayCount>0&&<button onClick={()=>{setTab("schedule");setTimeout(()=>document.getElementById("today-anchor")?.scrollIntoView({behavior:"smooth",block:"start"}),80);}} style={{flexShrink:0,display:"flex",alignItems:"center",gap:"6px",padding:"6px 12px",borderRadius:"8px",fontSize:"12px",fontWeight:600,cursor:"pointer",background:"rgba(217,119,6,0.2)",border:"1px solid rgba(217,119,6,0.55)",color:"#fbbf24"}}>★ {todayCount} Today</button>}
+  return html`<div style=${{background:"linear-gradient(160deg,#0a0f1e 0%,#0f172a 60%,#0a1628 100%)",minHeight:"100vh"}}>
+    <div style=${{borderBottom:"1px solid rgba(255,255,255,0.07)",background:"rgba(255,255,255,0.02)",padding:"16px 16px 0"}}>
+      <div style=${{maxWidth:"768px",margin:"0 auto"}}>
+        <div style=${{display:"flex",alignItems:"center",gap:"12px",marginBottom:"10px"}}>
+          <span style=${{fontSize:"28px"}}>⚽</span>
+          <div style=${{flex:1,minWidth:0}}>
+            <h1 style=${{fontSize:"18px",fontWeight:700,color:"#fff",lineHeight:1.2}}>2026 FIFA World Cup</h1>
+            <p style=${{fontSize:"11px",color:"#4b5563"}}>48 teams · 104 matches · Live via openfootball</p>
           </div>
-          <div style={{display:"flex",gap:"4px",overflowX:"auto"}}>
-            {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 12px",fontSize:"14px",fontWeight:500,borderRadius:"8px 8px 0 0",whiteSpace:"nowrap",cursor:"pointer",background:tab===t.id?"rgba(255,255,255,0.07)":"transparent",borderBottom:tab===t.id?"2px solid #3b82f6":"2px solid transparent",color:tab===t.id?"#e2e8f0":"#6b7280",border:"none"}}>{t.l}</button>)}
-          </div>
+          ${todayCount>0&&html`<button onClick=${()=>{setTab("schedule");setTimeout(()=>{const el=document.getElementById("today-anchor");if(el)el.scrollIntoView({behavior:"smooth",block:"start"});},80);}} style=${{flexShrink:0,display:"flex",alignItems:"center",gap:"6px",padding:"6px 12px",borderRadius:"8px",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:"rgba(217,119,6,0.2)",border:"1px solid rgba(217,119,6,0.55)",color:"#fbbf24"}}>★ ${todayCount} Today</button>`}
+        </div>
+        <div style=${{display:"flex",gap:"2px",overflowX:"auto"}}>
+          ${TABS.map(t=>html`<button key=${t.id} onClick=${()=>setTab(t.id)} style=${{padding:"8px 12px",fontSize:"13px",fontWeight:500,borderRadius:"8px 8px 0 0",whiteSpace:"nowrap",cursor:"pointer",fontFamily:"inherit",background:tab===t.id?"rgba(255,255,255,0.07)":"transparent",borderBottom:tab===t.id?"2px solid #3b82f6":"2px solid transparent",color:tab===t.id?"#e2e8f0":"#6b7280",border:"none",borderBottom:tab===t.id?"2px solid #3b82f6":"2px solid transparent"}}>${t.l}</button>`)}
         </div>
       </div>
-      <div style={{maxWidth:"768px",margin:"0 auto",padding:"16px"}}>
-        <FeedStatus status={status} updated={updated} reload={reload}/>
-        {tab==="schedule"&&<ScheduleView all={all} todayISO={todayISO}/>}
-        {tab==="groups"&&<GroupsView byKey={byKey} todayISO={todayISO}/>}
-        {tab==="bracket"&&<BracketView byNum={byNum} todayISO={todayISO}/>}
-        {tab==="rankings"&&<RankingsView/>}
-      </div>
     </div>
-  );
+    <div style=${{maxWidth:"768px",margin:"0 auto",padding:"16px"}}>
+      <${FeedStatus} status=${status} updated=${updated} reload=${reload}/>
+      ${tab==="schedule"&&html`<${ScheduleView} all=${all} todayISO=${todayISO}/>`}
+      ${tab==="groups"&&html`<${GroupsView} byKey=${byKey} todayISO=${todayISO}/>`}
+      ${tab==="bracket"&&html`<${BracketView} byNum=${byNum} todayISO=${todayISO}/>`}
+      ${tab==="rankings"&&html`<${RankingsView}/>`}
+    </div>
+  </div>`;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-  </script>
+ReactDOM.createRoot(document.getElementById("root")).render(html`<${App}/>`);
+</script>
 </body>
 </html>
