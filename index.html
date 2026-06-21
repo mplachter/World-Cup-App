@@ -12,6 +12,7 @@
     .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
     @keyframes spin{to{transform:rotate(360deg)}}
     .spin{animation:spin 1s linear infinite;display:inline-block}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
   </style>
 </head>
 <body>
@@ -112,7 +113,7 @@ const $today  = createStore(new Date().toISOString().slice(0,10));
 fetch("https://worldtimeapi.org/api/timezone/America/New_York")
   .then(r=>r.json()).then(d=>{if(d&&d.datetime)$today.set(new Date(d.datetime).toISOString().slice(0,10));}).catch(()=>{});
 
-// Load openfootball
+// Load openfootball (fixture/goals source, ~15min delay on scores)
 const URLS=["https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json","https://cdn.jsdelivr.net/gh/openfootball/worldcup.json@master/2026/worldcup.json"];
 async function loadData(){
   $status.set("loading");
@@ -124,6 +125,72 @@ async function loadData(){
 }
 loadData();
 setInterval(loadData, 90000);
+
+// ─── ESPN LIVE SCORES ─────────────────────────────────────────────────────────
+// ESPN unofficial API — no key needed, real-time scores with game clock
+// Keyed by sorted team pair "TeamA|TeamB" → {score, state, clock, detail, broadcast}
+const $espn = createStore({});   // live overlay map
+const $espnStatus = createStore("idle"); // "idle"|"live"|"error"
+
+// ESPN uses slightly different display names — map to our internal names
+const ESPN_NORM = {
+  "Czechia":"Czech Republic","Korea Republic":"South Korea","Cote d'Ivoire":"Ivory Coast",
+  "Bosnia-Herzegovina":"Bosnia and Herzegovina","DR Congo":"DR Congo","Curacao":"Curaçao",
+  "Cape Verde":"Cape Verde","New Zealand":"New Zealand","Saudi Arabia":"Saudi Arabia",
+};
+function espnNorm(n){ return ESPN_NORM[n]||n; }
+
+async function loadESPN(){
+  try{
+    const url="https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=200&dates=20260611-20260719";
+    const r=await fetch(url,{cache:"no-cache"});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const j=await r.json();
+    const map={};
+    let hasLive=false;
+    (j.events||[]).forEach(ev=>{
+      const comp=ev.competitions&&ev.competitions[0];
+      if(!comp)return;
+      const st=comp.status&&comp.status.type;
+      const state=st?st.state:"pre"; // pre|in|post
+      const detail=st?st.shortDetail||st.detail:"";
+      const clock=comp.status?comp.status.displayClock:"";
+      const isLive=state==="in";
+      const isPost=state==="post";
+      if(isLive)hasLive=true;
+      if(!isLive&&!isPost)return; // skip pre-game entries
+      const teams=comp.competitors||[];
+      if(teams.length<2)return;
+      // find home/away
+      const home=teams.find(t=>t.homeAway==="home")||teams[0];
+      const away=teams.find(t=>t.homeAway==="away")||teams[1];
+      const hName=espnNorm(home.team.displayName);
+      const aName=espnNorm(away.team.displayName);
+      const key=pkey(hName,aName);
+      const score=home.score+"-"+away.score;
+      // Get broadcast info
+      const bcast=(comp.broadcasts&&comp.broadcasts[0]&&comp.broadcasts[0].names)||[];
+      map[key]={
+        score, state, clock, detail,
+        homeScore:home.score, awayScore:away.score,
+        homeName:hName, awayName:aName,
+        isLive, isPost,
+        winner: isPost?(home.winner?hName:aName):null,
+        broadcast: bcast.join(" · "),
+        htScore: null, // ESPN doesn't give HT in scoreboard endpoint
+      };
+    });
+    $espn.set(map);
+    $espnStatus.set(hasLive?"live":"idle");
+  }catch(e){
+    console.warn("[ESPN]",e.message);
+    $espnStatus.set("error");
+  }
+}
+
+// Poll ESPN every 60s — it's fast and free
+loadESPN();
+setInterval(loadESPN, 60000);
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function parseScore(s){if(!s)return null;const p=s.split("-");if(p.length!==2)return null;const h=parseInt(p[0]),a=parseInt(p[1]);return isNaN(h)||isNaN(a)?null:{h,a};}
@@ -179,18 +246,34 @@ function squadPanel(team) {
 
 function matchCard(entry, todayISO, showSquads=true) {
   if (!entry) return null;
-  const {home,away,score,ht,goals1=[],goals2=[],date,time,ground,stage,round} = entry;
+  const {home,away,goals1=[],goals2=[],date,time,ground,stage,round} = entry;
+
+  // ESPN live overlay — takes priority over openfootball for score
+  const espnKey = pkey(home,away);
+  const espn = $espn.get()[espnKey] || null;
+
+  // Score: ESPN first (real-time), fall back to openfootball
+  const score = (espn && (espn.isLive||espn.isPost)) ? espn.score : entry.score;
+  const ht    = entry.ht; // openfootball has HT, ESPN doesn't
+  const isLive= !!(espn && espn.isLive);
+  const clock = isLive ? espn.clock : null;
+  const detail= espn ? espn.detail : null;
+  const broadcast = espn && espn.broadcast ? espn.broadcast : null;
+
   let open = false;
   const sc = parseScore(score);
   const hWon = sc ? sc.h>sc.a : false;
   const aWon = sc ? sc.a>sc.h : false;
-  const status = score?"played":date===todayISO?"today":date&&date<todayISO?"played":"upcoming";
+
+  // Status: live beats everything, then score, then date comparison
+  const status = isLive?"live":score?"played":date===todayISO?"today":date&&date<todayISO?"played":"upcoming";
   const r1=FIFA[home], r2=FIFA[away];
   const dateStr = date?new Date(date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}):"";
-  const sColor = status==="played"?"#6b7280":status==="today"?"#f59e0b":"#3b82f6";
-  const sLabel = status==="played"?"FT":status==="today"?"TODAY":"Upcoming";
-  const barBg  = status==="played"?"rgba(75,85,99,0.12)":status==="today"?"rgba(217,119,6,0.15)":"rgba(30,58,95,0.10)";
-  const border = status==="today"?"1px solid rgba(217,119,6,0.4)":"1px solid rgba(255,255,255,0.07)";
+
+  const sColor = status==="live"?"#f87171":status==="played"?"#6b7280":status==="today"?"#f59e0b":"#3b82f6";
+  const sLabel = status==="live"?"LIVE":status==="played"?"FT":status==="today"?"TODAY":"Upcoming";
+  const barBg  = status==="live"?"rgba(239,68,68,0.12)":status==="played"?"rgba(75,85,99,0.12)":status==="today"?"rgba(217,119,6,0.15)":"rgba(30,58,95,0.10)";
+  const border = status==="live"?"1px solid rgba(239,68,68,0.35)":status==="today"?"1px solid rgba(217,119,6,0.4)":"1px solid rgba(255,255,255,0.07)";
 
   // Build expandable body
   function buildBody() {
@@ -228,15 +311,18 @@ function matchCard(entry, todayISO, showSquads=true) {
     }},
       div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 12px',background:barBg,borderBottom:'1px solid rgba(255,255,255,0.05)'}},
         div({style:{display:'flex',alignItems:'center',gap:'8px'}},
-          span({style:{fontSize:'11px',fontWeight:'700',color:sColor}},sLabel),
+          isLive&&div({style:{width:'7px',height:'7px',borderRadius:'50%',background:'#f87171',flexShrink:0,animation:'pulse 1s ease-in-out infinite'}}),
+          span({style:{fontSize:'11px',fontWeight:'700',color:sColor}},sLabel+(isLive&&clock?' '+clock:'')),
           dateStr&&span({style:{fontSize:'11px',color:'#6b7280'}},dateStr),
-          time&&span({style:{fontSize:'11px',color:'#9ca3af'}},time)
+          !isLive&&time&&span({style:{fontSize:'11px',color:'#9ca3af'}},time),
+          broadcast&&span({style:{fontSize:'10px',color:'#4b5563',background:'rgba(255,255,255,0.05)',padding:'1px 5px',borderRadius:'3px'}},broadcast)
         ),
         div({style:{display:'flex',alignItems:'center',gap:'8px'}},
           span({style:{fontSize:'11px',color:'#374151',maxWidth:'100px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},ground||round||''),
           score&&div({style:{display:'flex',flexDirection:'column',alignItems:'center'}},
-            span({style:{fontSize:'14px',fontWeight:'700',color:'#fff',background:'rgba(0,0,0,0.3)',padding:'2px 8px',borderRadius:'4px'}},score),
-            ht&&span({style:{fontSize:'9px',color:'#4b5563'}},ht+' HT')
+            span({style:{fontSize:'14px',fontWeight:'700',color:isLive?'#f87171':'#fff',background:'rgba(0,0,0,0.3)',padding:'2px 8px',borderRadius:'4px',border:isLive?'1px solid rgba(239,68,68,0.4)':'none'}},score),
+            ht&&!isLive&&span({style:{fontSize:'9px',color:'#4b5563'}},ht+' HT'),
+            isLive&&detail&&detail!==clock&&span({style:{fontSize:'9px',color:'#f87171'}},detail)
           ),
           arrowEl
         )
@@ -296,13 +382,24 @@ function standingsTable(gk, byKey) {
 // ─── VIEWS ───────────────────────────────────────────────────────────────────
 function buildFeedStatus() {
   const st = $status.get();
-  const statusDot = div({style:{width:'8px',height:'8px',borderRadius:'50%',background:st==='done'?'#4ade80':st==='error'?'#f87171':'#60a5fa',flexShrink:0}});
-  if (st==='loading') statusDot.className='spin';
-  const statusText = span({style:{color:st==='done'?'#4ade80':st==='error'?'#f87171':'#93c5fd'}},
-    st==='loading'?'Loading scores…':st==='done'?'openfootball · live':'Feed unavailable'
+  const espnSt = $espnStatus.get();
+  const isESPNLive = espnSt==="live";
+
+  const dot = div({style:{width:'8px',height:'8px',borderRadius:'50%',background:st==='done'?'#4ade80':st==='error'?'#f87171':'#60a5fa',flexShrink:0}});
+  if(st==='loading') dot.className='spin';
+
+  const ofText = span({style:{color:st==='done'?'#4ade80':st==='error'?'#f87171':'#93c5fd'}},
+    st==='loading'?'Loading fixtures…':st==='done'?'openfootball · live':'Fixture source unavailable'
   );
-  const refreshBtn = btn({style:{marginLeft:'auto',padding:'3px 8px',borderRadius:'4px',background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'#9ca3af',fontSize:'12px'},onclick:loadData},'↻');
-  return div({style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px',borderRadius:'8px',marginBottom:'16px',fontSize:'12px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}},statusDot,statusText,refreshBtn);
+
+  const espnBadge = isESPNLive ? span({style:{display:'inline-flex',alignItems:'center',gap:'4px',background:'rgba(239,68,68,0.15)',border:'1px solid rgba(239,68,68,0.4)',borderRadius:'4px',padding:'1px 6px',fontSize:'10px',fontWeight:'700',color:'#f87171',marginLeft:'6px'}},
+    div({style:{width:'5px',height:'5px',borderRadius:'50%',background:'#f87171',animation:'pulse 1s ease-in-out infinite'}}),
+    'ESPN LIVE'
+  ) : null;
+
+  const refreshBtn = btn({style:{marginLeft:'auto',padding:'3px 8px',borderRadius:'4px',background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'#9ca3af',fontSize:'12px'},onclick:function(){loadData();loadESPN();}},'\u21BB');
+
+  return div({style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px',borderRadius:'8px',marginBottom:'16px',fontSize:'12px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}},dot,ofText,...(espnBadge?[espnBadge]:[]),refreshBtn);
 }
 
 function buildScheduleView() {
@@ -577,9 +674,13 @@ function buildApp(){
     tabButtons.appendChild(btn({'data-tab':t.id,style:{padding:'8px 12px',fontSize:'13px',fontWeight:'500',borderRadius:'8px 8px 0 0',whiteSpace:'nowrap',background:$tab.get()===t.id?'rgba(255,255,255,0.07)':'transparent',borderBottom:$tab.get()===t.id?'2px solid #3b82f6':'2px solid transparent',color:$tab.get()===t.id?'#e2e8f0':'#6b7280',border:'none'},onclick:function(){$tab.set(t.id);renderContent();}},t.l));
   });
 
-  // Re-render on data changes
+  // Re-render on data or ESPN score changes
   $data.sub(renderContent);
+  $espn.sub(renderContent);
   $status.sub(()=>{
+    const fs=contentArea.firstChild;if(fs){contentArea.replaceChild(buildFeedStatus(),fs);}
+  });
+  $espnStatus.sub(()=>{
     const fs=contentArea.firstChild;if(fs){contentArea.replaceChild(buildFeedStatus(),fs);}
   });
 
