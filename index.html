@@ -510,13 +510,14 @@ function buildRankingsView(){
       const sq=SQUADS[team];const rank=FIFA[team];
       let open=false;
       const body=div({style:{padding:'0 12px 12px',borderTop:'1px solid rgba(255,255,255,0.05)'}});
-      if(sq){const counts=getLC(sq);body.appendChild(leagueBar(counts,sq.length));body.appendChild(squadPanel(team));}
-      const arrow=span({style:{fontSize:'11px',color:'#4b5563'}},'▼');
+      if(sq){body.appendChild(squadPanel(team));}
+      const arrow=span({style:{fontSize:'11px',color:'#4b5563',flexShrink:0}},'▼');
+      const barWrap=sq?div({style:{flex:1,minWidth:0}},leagueBar(getLC(sq),sq.length)):span({style:{flex:1,fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'limited');
       const row=div({style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px'}},
         span({style:{fontSize:'11px',fontFamily:'monospace',color:rank<=5?'#fbbf24':rank<=15?'#94a3b8':'#4b5563',width:'20px',textAlign:'right',flexShrink:0}},rank),
         span({style:{fontSize:'20px',flexShrink:0}},FLAG[team]||'🏳'),
-        span({style:{fontSize:'13px',fontWeight:'500',color:'#e2e8f0',width:'140px',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},team),
-        sq?leagueBar(getLC(sq),sq.length):span({style:{flex:1,fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'limited'),
+        span({style:{fontSize:'13px',fontWeight:'500',color:'#e2e8f0',width:'130px',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},team),
+        barWrap,
         sq&&span({style:{fontSize:'11px',color:'#4b5563',flexShrink:0,marginLeft:'4px'}},sq.length),
         span({style:{flexShrink:0,marginLeft:'4px'}},arrow)
       );
