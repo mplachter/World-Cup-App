@@ -19,8 +19,7 @@
 <div id="root"></div>
 
 <script>
-// ─── TINY REACTIVE UI — no build tools, no CDN frameworks, plain JS ──────────
-// State management
+// ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
 const _subs = new Map();
 let _uid = 0;
 function createStore(init) {
@@ -34,7 +33,6 @@ function createStore(init) {
   };
 }
 
-// DOM helpers
 const ce = (tag, attrs, ...children) => {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -67,41 +65,54 @@ const path = (attrs) => {
   return el;
 };
 
-// Mount a component that re-renders when stores change
-function mount(container, render, stores=[]) {
-  let current = null;
-  const update = () => {
-    const next = render();
-    if (current) container.replaceChild(next, current);
-    else container.appendChild(next);
-    current = next;
-  };
-  stores.forEach(s => s.sub(update));
-  update();
-  return () => { if(current) container.removeChild(current); };
-}
-
-// ─── DATA ────────────────────────────────────────────────────────────────────
+// ─── DATA CONSTANTS ──────────────────────────────────────────────────────────
 const FIFA = {Argentina:1,Spain:2,France:3,England:4,Portugal:5,Brazil:6,Morocco:7,Netherlands:8,Belgium:9,Germany:10,Croatia:11,Colombia:12,Mexico:14,Senegal:15,Uruguay:16,USA:17,Japan:18,Switzerland:19,"South Korea":20,Turkey:21,Norway:22,Sweden:23,Ghana:24,Egypt:25,Canada:26,"Ivory Coast":27,Algeria:28,"Saudi Arabia":29,Austria:30,Ecuador:31,Scotland:32,Paraguay:33,Tunisia:34,Qatar:35,Australia:36,Iran:37,"Bosnia and Herzegovina":38,"Czech Republic":39,Panama:40,"DR Congo":41,Uzbekistan:42,"South Africa":43,Iraq:44,Jordan:45,"Cape Verde":46,"New Zealand":47,Haiti:48,"Curaçao":49};
 
 const FLAG = {Argentina:"🇦🇷",Spain:"🇪🇸",France:"🇫🇷",England:"🏴󠁧󠁢󠁥󠁮󠁧󠁿",Portugal:"🇵🇹",Brazil:"🇧🇷",Morocco:"🇲🇦",Netherlands:"🇳🇱",Belgium:"🇧🇪",Germany:"🇩🇪",Croatia:"🇭🇷",Colombia:"🇨🇴",Mexico:"🇲🇽",Senegal:"🇸🇳",Uruguay:"🇺🇾",USA:"🇺🇸",Japan:"🇯🇵",Switzerland:"🇨🇭","South Korea":"🇰🇷",Turkey:"🇹🇷",Norway:"🇳🇴",Sweden:"🇸🇪",Ghana:"🇬🇭",Egypt:"🇪🇬",Canada:"🇨🇦","Ivory Coast":"🇨🇮",Algeria:"🇩🇿","Saudi Arabia":"🇸🇦",Austria:"🇦🇹",Ecuador:"🇪🇨",Scotland:"🏴󠁧󠁢󠁳󠁣󠁴󠁿",Paraguay:"🇵🇾",Tunisia:"🇹🇳",Qatar:"🇶🇦",Australia:"🇦🇺",Iran:"🇮🇷","Bosnia and Herzegovina":"🇧🇦","Czech Republic":"🇨🇿",Panama:"🇵🇦","DR Congo":"🇨🇩",Uzbekistan:"🇺🇿","South Africa":"🇿🇦",Iraq:"🇮🇶",Jordan:"🇯🇴","Cape Verde":"🇨🇻","New Zealand":"🇳🇿",Haiti:"🇭🇹","Curaçao":"🇨🇼"};
 
 const GROUPS = {A:["Mexico","South Africa","South Korea","Czech Republic"],B:["Canada","Bosnia and Herzegovina","Qatar","Switzerland"],C:["Brazil","Morocco","Haiti","Scotland"],D:["USA","Paraguay","Australia","Turkey"],E:["Germany","Curaçao","Ivory Coast","Ecuador"],F:["Netherlands","Japan","Sweden","Tunisia"],G:["Belgium","Egypt","Iran","New Zealand"],H:["Spain","Cape Verde","Saudi Arabia","Uruguay"],I:["France","Senegal","Iraq","Norway"],J:["Argentina","Algeria","Austria","Jordan"],K:["Portugal","DR Congo","Uzbekistan","Colombia"],L:["England","Croatia","Ghana","Panama"]};
 
-const LEAGUES=["Premier League","La Liga","Bundesliga","Ligue 1","Serie A","Primeira Liga","Eredivisie","Saudi Pro League","MLS","Süper Lig","Championship","Scottish Prem","Other"];
-const LC={"Premier League":"#4c1d95","La Liga":"#991b1b","Bundesliga":"#92400e","Ligue 1":"#1e3a5f","Serie A":"#14532d","Primeira Liga":"#065f46","Eredivisie":"#6d28d9","Saudi Pro League":"#78350f","MLS":"#1d4ed8","Süper Lig":"#be123c","Championship":"#4b5563","Scottish Prem":"#1e40af","Other":"#292524"};
+const LEAGUES=["Premier League","La Liga","Bundesliga","Ligue 1","Serie A","Primeira Liga","Eredivisie","Saudi Pro League","MLS","Süper Lig","Scottish Prem","Other"];
+const LC={"Premier League":"#4c1d95","La Liga":"#991b1b","Bundesliga":"#92400e","Ligue 1":"#1e3a5f","Serie A":"#14532d","Primeira Liga":"#065f46","Eredivisie":"#6d28d9","Saudi Pro League":"#78350f","MLS":"#1d4ed8","Süper Lig":"#be123c","Scottish Prem":"#1e40af","Other":"#292524"};
 
-const P=(n,pos,lg,cl)=>({name:n,pos,league:lg,club:cl});
-const PL="Premier League",LL="La Liga",BL="Bundesliga",L1="Ligue 1",SA="Serie A",PtL="Primeira Liga",ERE="Eredivisie",SPL="Saudi Pro League",MLS_="MLS",SUP="Süper Lig",CH="Championship",SP="Scottish Prem",OTH="Other";
-const SQUADS={Argentina:[P("E. Martínez","GK",PL,"Aston Villa"),P("L. Martínez","DEF",PL,"Man Utd"),P("C. Romero","DEF",PL,"Tottenham"),P("E. Fernández","MID",PL,"Chelsea"),P("A. Mac Allister","MID",PL,"Liverpool"),P("J. Álvarez","FWD",LL,"Atlético"),P("N. Molina","DEF",LL,"Atlético"),P("G. Lo Celso","MID",LL,"Real Betis"),P("N. Otamendi","DEF",PtL,"Benfica"),P("E. Palacios","MID",BL,"Leverkusen"),P("R. De Paul","MID",MLS_,"Inter Miami"),P("L. Messi","FWD",MLS_,"Inter Miami"),P("L. Martínez (L.)","FWD",SA,"Inter Milan"),P("G. Montiel","DEF",OTH,"River Plate")],Spain:[P("D. Raya","GK",PL,"Arsenal"),P("P. Porro","DEF",PL,"Tottenham"),P("M. Cucurella","DEF",PL,"Chelsea"),P("R. Zubimendi","MID",PL,"Arsenal"),P("M. Merino","MID",PL,"Arsenal"),P("Rodri","MID",PL,"Man City"),P("P. Cubarsí","DEF",LL,"Barcelona"),P("Pedri","MID",LL,"Barcelona"),P("L. Yamal","FWD",LL,"Barcelona"),P("N. Williams","FWD",LL,"Athletic"),P("M. Oyarzabal","FWD",LL,"Real Sociedad"),P("Á. Grimaldo","DEF",BL,"Leverkusen"),P("F. Ruiz","MID",L1,"PSG"),P("U. Simón","GK",LL,"Athletic")],France:[P("M. Maignan","GK",SA,"AC Milan"),P("W. Saliba","DEF",PL,"Arsenal"),P("I. Konaté","DEF",PL,"Liverpool"),P("J. Koundé","DEF",LL,"Barcelona"),P("K. Mbappé","FWD",LL,"Real Madrid"),P("A. Tchouaméni","MID",LL,"Real Madrid"),P("D. Upamecano","DEF",BL,"Bayern"),P("M. Olise","FWD",BL,"Bayern"),P("W. Zaïre-Emery","MID",L1,"PSG"),P("O. Dembélé","FWD",L1,"PSG"),P("B. Barcola","FWD",L1,"PSG"),P("M. Thuram","FWD",SA,"Inter Milan"),P("A. Rabiot","MID",SA,"AC Milan"),P("N'G. Kanté","MID",SUP,"Fenerbahçe")],England:[P("J. Pickford","GK",PL,"Everton"),P("J. Stones","DEF",PL,"Man City"),P("R. James","DEF",PL,"Chelsea"),P("E. Konsa","DEF",PL,"Aston Villa"),P("D. Rice","MID",PL,"Arsenal"),P("K. Mainoo","MID",PL,"Man Utd"),P("B. Saka","FWD",PL,"Arsenal"),P("O. Watkins","FWD",PL,"Aston Villa"),P("E. Eze","FWD",PL,"Arsenal"),P("J. Bellingham","MID",LL,"Real Madrid"),P("M. Rashford","FWD",LL,"Barcelona"),P("H. Kane","FWD",BL,"Bayern"),P("I. Toney","FWD",SPL,"Al-Ahli")],Portugal:[P("D. Costa","GK",PtL,"Porto"),P("R. Dias","DEF",PL,"Man City"),P("D. Dalot","DEF",PL,"Man Utd"),P("B. Fernandes","MID",PL,"Man Utd"),P("B. Silva","MID",PL,"Man City"),P("P. Neto","FWD",PL,"Chelsea"),P("J. Cancelo","DEF",LL,"Barcelona"),P("N. Mendes","DEF",L1,"PSG"),P("Vitinha","MID",L1,"PSG"),P("J. Neves","MID",L1,"PSG"),P("G. Ramos","FWD",L1,"PSG"),P("R. Leão","FWD",SA,"AC Milan"),P("C. Ronaldo","FWD",SPL,"Al-Nassr"),P("G. Inácio","DEF",PtL,"Sporting CP")],Brazil:[P("Alisson","GK",PL,"Liverpool"),P("Gabriel M.","DEF",PL,"Arsenal"),P("B. Guimarães","MID",PL,"Newcastle"),P("Casemiro","MID",PL,"Man Utd"),P("G. Martinelli","FWD",PL,"Arsenal"),P("Vinícius Jr.","FWD",LL,"Real Madrid"),P("Raphinha","FWD",LL,"Barcelona"),P("Rodrygo","FWD",LL,"Real Madrid"),P("Marquinhos","DEF",L1,"PSG"),P("Endrick","FWD",L1,"Lyon"),P("Wesley","DEF",SA,"Roma"),P("Paquetá","MID",OTH,"Flamengo"),P("Neymar","FWD",OTH,"Santos")],Morocco:[P("Y. Bounou","GK",SPL,"Al-Hilal"),P("A. Hakimi","DEF",L1,"PSG"),P("N. Aguerd","DEF",L1,"Marseille"),P("N. Mazraoui","DEF",PL,"Man Utd"),P("C. Riad","DEF",PL,"Crystal Palace"),P("S. Amrabat","MID",LL,"Real Betis"),P("B. El Khannouss","MID",BL,"Stuttgart"),P("I. Saibari","MID",ERE,"PSV"),P("N. El Aynaoui","MID",SA,"Roma"),P("B. Díaz","MID",LL,"Real Madrid"),P("A. Ezzalzouli","FWD",LL,"Real Betis")],Netherlands:[P("B. Verbruggen","GK",PL,"Brighton"),P("V. van Dijk","DEF",PL,"Liverpool"),P("J. Timber","DEF",PL,"Arsenal"),P("N. Aké","DEF",PL,"Man City"),P("R. Gravenberch","MID",PL,"Liverpool"),P("T. Reijnders","MID",PL,"Man City"),P("C. Gakpo","FWD",PL,"Liverpool"),P("F. de Jong","MID",LL,"Barcelona"),P("T. Koopmeiners","MID",SA,"Juventus"),P("D. Dumfries","DEF",SA,"Inter Milan"),P("G. Til","MID",ERE,"PSV"),P("W. Weghorst","FWD",ERE,"Ajax"),P("N. Lang","FWD",SUP,"Galatasaray")],Belgium:[P("T. Courtois","GK",LL,"Real Madrid"),P("T. Castagne","DEF",PL,"Fulham"),P("M. De Cuyper","DEF",PL,"Brighton"),P("Y. Tielemans","MID",PL,"Aston Villa"),P("A. Onana","MID",PL,"Aston Villa"),P("L. Trossard","FWD",PL,"Arsenal"),P("J. Doku","FWD",PL,"Man City"),P("A. Diallo","FWD",PL,"Man Utd"),P("K. De Bruyne","MID",SA,"Napoli"),P("R. Lukaku","FWD",SA,"Napoli"),P("C. De Ketelaere","MID",SA,"Atalanta"),P("A. Theate","DEF",BL,"Eintracht"),P("Z. Debast","DEF",PtL,"Sporting CP")],Germany:[P("M. Neuer","GK",BL,"Bayern"),P("A. Rüdiger","DEF",LL,"Real Madrid"),P("J. Tah","DEF",BL,"Bayern"),P("N. Schlotterbeck","DEF",BL,"Dortmund"),P("J. Kimmich","MID",BL,"Bayern"),P("J. Musiala","MID",BL,"Bayern"),P("A. Pavlović","MID",BL,"Bayern"),P("D. Undav","FWD",BL,"Stuttgart"),P("K. Havertz","FWD",PL,"Arsenal"),P("F. Wirtz","MID",PL,"Liverpool"),P("M. Olise","FWD",BL,"Bayern"),P("L. Sané","FWD",SUP,"Galatasaray")],USA:[P("M. Turner","GK",MLS_,"New England"),P("A. Robinson","DEF",PL,"Fulham"),P("C. Richards","DEF",PL,"Crystal Palace"),P("T. Adams","MID",PL,"Bournemouth"),P("A. Freeman","DEF",LL,"Villarreal"),P("S. Dest","DEF",ERE,"PSV"),P("M. McKenzie","DEF",L1,"Toulouse"),P("G. Reyna","MID",BL,"B. M'gladbach"),P("M. Tillman","MID",BL,"Leverkusen"),P("W. McKennie","MID",SA,"Juventus"),P("C. Pulisic","FWD",SA,"AC Milan"),P("R. Pepi","FWD",ERE,"PSV"),P("F. Balogun","FWD",L1,"Monaco"),P("T. Weah","FWD",L1,"Marseille")],Japan:[P("W. Endo","MID",PL,"Liverpool"),P("D. Kamada","MID",PL,"Crystal Palace"),P("H. Itō","DEF",BL,"Bayern"),P("T. Kubo","MID",LL,"Real Sociedad"),P("R. Dōan","FWD",BL,"Eintracht"),P("D. Maeda","FWD",SP,"Celtic"),P("A. Ueda","FWD",ERE,"Feyenoord"),P("A. Tanaka","MID",CH,"Leeds"),P("Z. Suzuki","GK",SA,"Parma")],Switzerland:[P("G. Kobel","GK",BL,"Dortmund"),P("M. Akanji","DEF",SA,"Inter Milan"),P("N. Elvedi","DEF",BL,"B. M'gladbach"),P("G. Xhaka","MID",BL,"Leverkusen"),P("R. Freuler","MID",SA,"Bologna"),P("D. Sow","MID",LL,"Sevilla"),P("B. Embolo","FWD",L1,"Rennes"),P("D. Ndoye","FWD",PL,"Nottm Forest"),P("R. Vargas","FWD",LL,"Sevilla"),P("A. Jashari","MID",SA,"AC Milan")],"South Korea":[P("Kim Min-jae","DEF",BL,"Bayern"),P("Hwang Hee-chan","MID",PL,"Wolves"),P("Lee Kang-in","MID",L1,"PSG"),P("Hwang In-beom","MID",ERE,"Feyenoord"),P("Bae Jun-ho","MID",CH,"Stoke"),P("Son Heung-min","FWD",MLS_,"LA FC"),P("Kim Seung-gyu","GK",OTH,"FC Tokyo")],Turkey:[P("A. Bayındır","GK",PL,"Man Utd"),P("F. Kadıoğlu","DEF",PL,"Brighton"),P("H. Çalhanoğlu","MID",SA,"Inter Milan"),P("Arda Güler","MID",LL,"Real Madrid"),P("K. Yıldız","FWD",SA,"Juventus"),P("S. Özcan","MID",BL,"Dortmund"),P("K. Ayhan","MID",SUP,"Galatasaray"),P("K. Aktürkoğlu","FWD",SUP,"Fenerbahçe"),P("M. Demiral","DEF",SPL,"Al-Ahli")],Norway:[P("E. Haaland","FWD",PL,"Man City"),P("M. Ødegaard","MID",PL,"Arsenal"),P("S. Berge","MID",PL,"Fulham"),P("K. Ajer","DEF",PL,"Brentford"),P("J.S. Larsen","FWD",PL,"Crystal Palace"),P("A. Sørloth","FWD",LL,"Atlético"),P("J. Ryerson","DEF",BL,"Dortmund"),P("A. Nusa","FWD",BL,"RB Leipzig"),P("F. Aursnes","MID",PtL,"Benfica")],Sweden:[P("A. Isak","FWD",PL,"Liverpool"),P("V. Gyökeres","FWD",PL,"Arsenal"),P("A. Elanga","FWD",PL,"Newcastle"),P("V. Lindelöf","DEF",PL,"Aston Villa"),P("L. Bergvall","MID",PL,"Tottenham"),P("Y. Ayari","MID",PL,"Brighton"),P("M. Svanberg","MID",BL,"Wolfsburg"),P("I. Hien","DEF",SA,"Atalanta")],Ghana:[P("T. Partey","MID",LL,"Villarreal"),P("Iñaki Williams","FWD",LL,"Athletic"),P("A. Fatawu","MID",PL,"Leicester"),P("J. Ayew","FWD",PL,"Leicester"),P("A. Semenyo","FWD",PL,"Man City"),P("K. Sulemana","FWD",SA,"Atalanta"),P("E. Nuamah","FWD",L1,"Lyon"),P("L. Ati-Zigi","GK",OTH,"St. Gallen")],Egypt:[P("M. Salah","FWD",PL,"Liverpool"),P("O. Marmoush","FWD",PL,"Man City"),P("M. El Shenawy","GK",SPL,"Al Ahly"),P("M. Abdelmonem","DEF",L1,"Nice")],Canada:[P("A. Davies","DEF",BL,"Bayern"),P("A. Johnston","DEF",SP,"Celtic"),P("J. David","FWD",SA,"Juventus"),P("I. Koné","MID",SA,"Sassuolo"),P("C. Larin","FWD",PL,"Southampton"),P("T. Buchanan","FWD",LL,"Villarreal"),P("S. Eustáquio","MID",MLS_,"LA FC")],"South Africa":[P("S. Hlanti","DEF",CH,"Millwall"),P("M. Moabi","FWD",L1,"Lorient"),P("N. Zungu","MID",LL,"Girona"),P("T. Shalulile","FWD",OTH,"Sundowns"),P("R. Williams","GK",OTH,"SuperSport")],"Czech Republic":[P("J. Staněk","GK",PL,"Arsenal"),P("V. Coufal","DEF",PL,"West Ham"),P("T. Souček","MID",PL,"West Ham"),P("M. Kovář","GK",BL,"Leverkusen"),P("A. Hlozek","FWD",BL,"Leverkusen"),P("P. Schick","FWD",BL,"Leverkusen"),P("A. Barák","MID",SA,"Fiorentina")],"Bosnia and Herzegovina":[P("S. Šunjić","DEF",BL,"Stuttgart"),P("H. Tabakovic","FWD",BL,"Hertha"),P("A. Huseinović","MID",CH,"Burnley"),P("N. Jurić","MID",SA,"Torino"),P("E. Džeko","FWD",OTH,"Schalke")],Qatar:[P("A. Khusanov","DEF",PL,"Man City"),P("A. Afif","FWD",OTH,"Al Sadd"),P("A. Almoez","FWD",OTH,"Al Duhail")],Haiti:[P("N. St. Juste","DEF",BL,"Mainz"),P("M. Phaëton","MID",L1,"Angers"),P("R. Joseph","GK",MLS_,"DC United")],Scotland:[P("A. Robertson","DEF",PL,"Liverpool"),P("J. McGinn","MID",PL,"Aston Villa"),P("A. Gunn","GK",PL,"Southampton"),P("S. McTominay","MID",SA,"Napoli"),P("B. Gilmour","MID",SA,"Napoli"),P("L. Ferguson","FWD",SA,"Bologna"),P("R. Christie","MID",L1,"Rennes"),P("K. Tierney","DEF",LL,"Real Sociedad"),P("C. McGregor","MID",SP,"Celtic"),P("L. Cooper","DEF",CH,"Leeds")],Paraguay:[P("M. Almiron","MID",PL,"Newcastle"),P("A. Romero","MID",PL,"Tottenham"),P("J. Enciso","MID",PL,"Brighton"),P("R. Sanabria","FWD",SA,"Torino"),P("C. Alcaraz","MID",SA,"Roma"),P("A. Silva","GK",OTH,"Olimpia")],Australia:[P("H. Souttar","DEF",PL,"Leicester"),P("N. Atkinson","DEF",PL,"Aston Villa"),P("B. Wright","MID",PL,"Brighton"),P("J. Irvine","MID",PL,"Ipswich"),P("C. Goodwin","FWD",PL,"Southampton"),P("M. Ryan","GK",LL,"Real Sociedad"),P("A. Hrustic","MID",SA,"Hellas Verona")],"Ivory Coast":[P("I. Sangaré","MID",PL,"Man City"),P("W. Zaha","FWD",PL,"Crystal Palace"),P("F. Koné","MID",BL,"Dortmund"),P("S. Haller","FWD",BL,"Dortmund"),P("S. Fofana","MID",SA,"Juventus"),P("Y. Fofana","GK",L1,"Rennes"),P("O. Doué","FWD",L1,"PSG")],Ecuador:[P("R. Hincapié","DEF",BL,"Leverkusen"),P("P. Estupiñán","DEF",PL,"Brighton"),P("M. Caicedo","MID",PL,"Chelsea"),P("H. Galíndez","GK",OTH,"Aucas")],Tunisia:[P("S. Laïdouni","MID",SA,"Bologna"),P("E. Skhiri","MID",SA,"Eintracht"),P("Y. Ben Slimane","MID",BL,"RB Leipzig"),P("W. Ait Nouri","DEF",PL,"Wolves"),P("W. Khazri","FWD",L1,"Rennes")],Iran:[P("M. Taremi","FWD",SA,"Inter Milan"),P("S. Azmoun","FWD",SA,"Roma"),P("V. Amiri","MID",BL,"Leverkusen"),P("A. Beiranvand","GK",OTH,"Persepolis")],"New Zealand":[P("C. Wood","FWD",PL,"Newcastle"),P("T. Payne","DEF",PL,"Everton"),P("O. Sail","GK",OTH,"Wellington Phoenix")],"Cape Verde":[P("F. Livramento","DEF",PL,"Newcastle"),P("G. Tavares","FWD",BL,"Leverkusen"),P("Z. Fati","FWD",LL,"Sevilla")],"Saudi Arabia":[P("M. Al-Owais","GK",SPL,"Al-Hilal"),P("S. Al-Dawsari","FWD",SPL,"Al-Hilal"),P("F. Al-Buraikan","FWD",SPL,"Al-Hilal"),P("M. Kanno","MID",SPL,"Al-Ittihad")],Algeria:[P("R. Mahrez","FWD",SPL,"Al-Ahli"),P("I. Bennacer","MID",SA,"AC Milan"),P("R. Bensebaini","DEF",BL,"Dortmund"),P("O. Amoura","FWD",BL,"Wolfsburg"),P("R. Ait-Nouri","DEF",PL,"Wolves"),P("S. Benrahma","MID",PL,"Crystal Palace"),P("A. Mandi","DEF",LL,"Villarreal")],Austria:[P("P. Pentz","GK",BL,"Leverkusen"),P("K. Laimer","MID",BL,"Bayern"),P("X. Schlager","MID",BL,"RB Leipzig"),P("N. Seiwald","MID",BL,"RB Leipzig"),P("G. Wöber","DEF",BL,"Dortmund"),P("A. Arnautović","FWD",SA,"Inter Milan"),P("M. Sabitzer","MID",PL,"Man Utd"),P("K. Trauner","DEF",ERE,"Feyenoord")],Jordan:[P("Y. Al-Naser","GK",OTH,"Al-Faisaly"),P("O. Al-Musa","FWD",OTH,"Al-Qadsiah")],"DR Congo":[P("W. Boly","DEF",PL,"Nottm Forest"),P("P. Wissa","FWD",PL,"Brentford"),P("C. Mbemba","DEF",L1,"Marseille"),P("P. Bongonda","FWD",BL,"Wolfsburg"),P("E. Mpasi","GK",SA,"Genoa")],Uzbekistan:[P("A. Khusanov","DEF",PL,"Man City"),P("A. Shomurodov","FWD",SA,"Roma"),P("E. Shomurodov","FWD",SA,"Roma"),P("U. Nishonov","GK",OTH,"Lokomotiv")],Panama:[P("H. Murillo","DEF",PL,"Nottm Forest"),P("A. Fajardo","MID",MLS_,"FC Cincinnati"),P("E. Torres","DEF",MLS_,"LA Galaxy"),P("L. Mejía","GK",MLS_,"New England")],"Curaçao":[P("G. Tavares","FWD",BL,"Leverkusen"),P("T. Rienstra","DEF",ERE,"AZ"),P("M. van Aanholt","FWD",CH,"Sheffield Utd"),P("E. Daal","GK",OTH,"HB Tórshavn")],Iraq:[P("M. Taremi","FWD",SA,"Inter Milan"),P("B. Majid","DEF",SPL,"Al-Hilal"),P("J. Hamed","GK",OTH,"Air Force Club")]};
+// Openfootball club.country (FIFA/IOC 3-letter) → display league
+const COUNTRY_TO_LEAGUE = {
+  ENG:"Premier League", ESP:"La Liga", GER:"Bundesliga", FRA:"Ligue 1",
+  ITA:"Serie A", POR:"Primeira Liga", NED:"Eredivisie", KSA:"Saudi Pro League",
+  SAU:"Saudi Pro League", USA:"MLS", TUR:"Süper Lig", SCO:"Scottish Prem",
+};
+const POS_MAP = { GK:"GK", DF:"DEF", MF:"MID", FW:"FWD" };
+
+// Openfootball team-name normalization — match our internal keys
+const SQUAD_NAME_NORM = {
+  "United States":"USA",
+  "Korea Republic":"South Korea",
+  "Côte d'Ivoire":"Ivory Coast",
+  "Bosnia & Herzegovina":"Bosnia and Herzegovina",
+  "Bosnia and Herzegovina":"Bosnia and Herzegovina",
+  "Czechia":"Czech Republic",
+  "Cape Verde":"Cape Verde",
+  "Curaçao":"Curaçao",
+};
+
+// Squads — populated at runtime from openfootball
+let SQUADS = {};
+const $squads = createStore({ loaded: false, count: 0 });
 
 // ─── FEED ────────────────────────────────────────────────────────────────────
 const NORM={"Bosnia & Herzegovina":"Bosnia and Herzegovina","United States":"USA","Côte d'Ivoire":"Ivory Coast","Korea Republic":"South Korea"};
 const norm=t=>NORM[t]||t;
 const pkey=(a,b)=>[norm(a),norm(b)].sort().join("|");
 function stageOf(r){if(!r)return"group";const s=r.toLowerCase();if(s.includes("round of 32"))return"r32";if(s.includes("round of 16"))return"r16";if(s.includes("quarter"))return"qf";if(s.includes("semi"))return"sf";if(s.includes("third"))return"3rd";if(s.includes("final"))return"final";return"group";}
-function toET(t){if(!t)return"";const m=t.match(/(\d+):(\d+)\s*UTC([+-]\d+)/);if(!m)return t;const h=((parseInt(m[1])-parseInt(m[3])-4)%24+24)%24;return(h%12||12)+":"+m[2]+" "+(h>=12?"PM":"AM")+" ET";}
-function processRaw(json){const byKey={},byNum={},all=[];(json.matches||[]).forEach(m=>{const h=norm(m.team1),a=norm(m.team2);const e={home:h,away:a,score:m.score&&m.score.ft?m.score.ft[0]+"-"+m.score.ft[1]:null,ht:m.score&&m.score.ht?m.score.ht[0]+"-"+m.score.ht[1]:null,goals1:m.goals1||[],goals2:m.goals2||[],date:m.date,time:toET(m.time),ground:m.ground,stage:stageOf(m.round),round:m.round,num:m.num||null};byKey[pkey(h,a)]=e;if(m.num)byNum[m.num]=e;all.push(e);});return{byKey,byNum,all};}
+function localTime(t){
+  if(!t)return'';
+  const m=t.match(/(\d+):(\d+)\s*UTC([+-]\d+)/);
+  if(!m)return t;
+  const utcH=parseInt(m[1])-parseInt(m[3]);
+  const utcMs=Date.UTC(2026,5,15,utcH,parseInt(m[2]));
+  return new Date(utcMs).toLocaleTimeString([],{hour:'numeric',minute:'2-digit',hour12:true});
+}
+function processRaw(json){const byKey={},byNum={},all=[];(json.matches||[]).forEach(m=>{const h=norm(m.team1),a=norm(m.team2);const e={home:h,away:a,score:m.score&&m.score.ft?m.score.ft[0]+"-"+m.score.ft[1]:null,ht:m.score&&m.score.ht?m.score.ht[0]+"-"+m.score.ht[1]:null,goals1:m.goals1||[],goals2:m.goals2||[],date:m.date,time:localTime(m.time),ground:m.ground,stage:stageOf(m.round),round:m.round,num:m.num||null};byKey[pkey(h,a)]=e;if(m.num)byNum[m.num]=e;all.push(e);});return{byKey,byNum,all};}
 
 // ─── APP STATE ────────────────────────────────────────────────────────────────
 const $tab    = createStore("schedule");
@@ -109,11 +120,11 @@ const $data   = createStore(null);
 const $status = createStore("loading");
 const $today  = createStore(new Date().toISOString().slice(0,10));
 
-// Load today from worldtimeapi
+// Today from worldtimeapi
 fetch("https://worldtimeapi.org/api/timezone/America/New_York")
   .then(r=>r.json()).then(d=>{if(d&&d.datetime)$today.set(new Date(d.datetime).toISOString().slice(0,10));}).catch(()=>{});
 
-// Load openfootball (fixture/goals source, ~15min delay on scores)
+// Fixtures
 const URLS=["https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json","https://cdn.jsdelivr.net/gh/openfootball/worldcup.json@master/2026/worldcup.json"];
 async function loadData(){
   $status.set("loading");
@@ -126,13 +137,52 @@ async function loadData(){
 loadData();
 setInterval(loadData, 90000);
 
-// ─── ESPN LIVE SCORES ─────────────────────────────────────────────────────────
-// ESPN unofficial API — no key needed, real-time scores with game clock
-// Keyed by sorted team pair "TeamA|TeamB" → {score, state, clock, detail, broadcast}
-const $espn = createStore({});   // live overlay map
-const $espnStatus = createStore("idle"); // "idle"|"live"|"error"
+// Squads — fetch openfootball worldcup.squads.json
+const SQUAD_URLS=[
+  "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.squads.json",
+  "https://cdn.jsdelivr.net/gh/openfootball/worldcup.json@master/2026/worldcup.squads.json"
+];
+async function loadSquads(){
+  for(const url of SQUAD_URLS){
+    try{
+      const r=await fetch(url,{cache:"no-cache"});
+      if(!r.ok)throw new Error("HTTP "+r.status);
+      const j=await r.json();
+      const out={};
+      // openfootball ships squads as a top-level array; tolerate {teams:[...]} too
+      const teams = Array.isArray(j) ? j : (j.teams || []);
+      teams.forEach(t=>{
+        const rawName = t.name || t.title || "";
+        const teamName = SQUAD_NAME_NORM[rawName] || rawName;
+        const players = (t.players || t.squad || []).map(p=>{
+          // Openfootball club shape: {name, country} or just a string
+          let clubName="", clubCountry="";
+          if(p.club){
+            if(typeof p.club === "string"){ clubName=p.club; }
+            else { clubName=p.club.name||""; clubCountry=p.club.country||p.club.code||""; }
+          }
+          return {
+            name: p.name || "",
+            pos: POS_MAP[p.pos] || p.pos || "",
+            league: COUNTRY_TO_LEAGUE[clubCountry] || "Other",
+            club: clubName,
+          };
+        });
+        if(teamName && players.length) out[teamName]=players;
+      });
+      SQUADS = out;
+      $squads.set({loaded:true, count:Object.keys(out).length});
+      return;
+    }catch(e){console.warn("[squads]",url,e.message);}
+  }
+  $squads.set({loaded:false, count:0, error:true});
+}
+loadSquads();
 
-// ESPN uses slightly different display names — map to our internal names
+// ─── ESPN LIVE SCORES ─────────────────────────────────────────────────────────
+const $espn = createStore({});
+const $espnStatus = createStore("idle");
+
 const ESPN_NORM = {
   "Czechia":"Czech Republic","Korea Republic":"South Korea","Cote d'Ivoire":"Ivory Coast",
   "Bosnia-Herzegovina":"Bosnia and Herzegovina","DR Congo":"DR Congo","Curacao":"Curaçao",
@@ -152,23 +202,21 @@ async function loadESPN(){
       const comp=ev.competitions&&ev.competitions[0];
       if(!comp)return;
       const st=comp.status&&comp.status.type;
-      const state=st?st.state:"pre"; // pre|in|post
+      const state=st?st.state:"pre";
       const detail=st?st.shortDetail||st.detail:"";
       const clock=comp.status?comp.status.displayClock:"";
       const isLive=state==="in";
       const isPost=state==="post";
       if(isLive)hasLive=true;
-      if(!isLive&&!isPost)return; // skip pre-game entries
+      if(!isLive&&!isPost)return;
       const teams=comp.competitors||[];
       if(teams.length<2)return;
-      // find home/away
       const home=teams.find(t=>t.homeAway==="home")||teams[0];
       const away=teams.find(t=>t.homeAway==="away")||teams[1];
       const hName=espnNorm(home.team.displayName);
       const aName=espnNorm(away.team.displayName);
       const key=pkey(hName,aName);
       const score=home.score+"-"+away.score;
-      // Get broadcast info
       const bcast=(comp.broadcasts&&comp.broadcasts[0]&&comp.broadcasts[0].names)||[];
       map[key]={
         score, state, clock, detail,
@@ -177,7 +225,7 @@ async function loadESPN(){
         isLive, isPost,
         winner: isPost?(home.winner?hName:aName):null,
         broadcast: bcast.join(" · "),
-        htScore: null, // ESPN doesn't give HT in scoreboard endpoint
+        htScore: null,
       };
     });
     $espn.set(map);
@@ -187,8 +235,6 @@ async function loadESPN(){
     $espnStatus.set("error");
   }
 }
-
-// Poll ESPN every 60s — it's fast and free
 loadESPN();
 setInterval(loadESPN, 60000);
 
@@ -220,7 +266,10 @@ function leagueBar(counts, total) {
 
 function squadPanel(team) {
   const sq = SQUADS[team];
-  if (!sq) return span({style:{fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'Squad data limited');
+  if (!sq || !sq.length) {
+    if (!$squads.get().loaded) return span({style:{fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'Loading squad…');
+    return span({style:{fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'Squad data unavailable');
+  }
   const counts = getLC(sq);
   return div({},
     div({style:{marginBottom:'8px'}}, leagueBar(counts, sq.length)),
@@ -248,25 +297,23 @@ function matchCard(entry, todayISO, showSquads=true) {
   if (!entry) return null;
   const {home,away,goals1=[],goals2=[],date,time,ground,stage,round} = entry;
 
-  // ESPN live overlay — takes priority over openfootball for score
   const espnKey = pkey(home,away);
   const espn = $espn.get()[espnKey] || null;
 
-  // Score: ESPN first (real-time), fall back to openfootball
   const score = (espn && (espn.isLive||espn.isPost)) ? espn.score : entry.score;
-  const ht    = entry.ht; // openfootball has HT, ESPN doesn't
+  const ht    = entry.ht;
   const isLive= !!(espn && espn.isLive);
   const clock = isLive ? espn.clock : null;
   const detail= espn ? espn.detail : null;
   const broadcast = espn && espn.broadcast ? espn.broadcast : null;
 
-  let open = false;
   const sc = parseScore(score);
   const hWon = sc ? sc.h>sc.a : false;
   const aWon = sc ? sc.a>sc.h : false;
+  const scoreDisp = sc!==null ? sc.h+'-'+sc.a : null;
 
-  // Status: live beats everything, then score, then date comparison
-  const status = isLive?"live":score?"played":date===todayISO?"today":date&&date<todayISO?"played":"upcoming";
+  let open = false;
+  const status = isLive?"live":scoreDisp?"played":date===todayISO?"today":date&&date<todayISO?"played":"upcoming";
   const r1=FIFA[home], r2=FIFA[away];
   const dateStr = date?new Date(date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}):"";
 
@@ -275,7 +322,6 @@ function matchCard(entry, todayISO, showSquads=true) {
   const barBg  = status==="live"?"rgba(239,68,68,0.12)":status==="played"?"rgba(75,85,99,0.12)":status==="today"?"rgba(217,119,6,0.15)":"rgba(30,58,95,0.10)";
   const border = status==="live"?"1px solid rgba(239,68,68,0.35)":status==="today"?"1px solid rgba(217,119,6,0.4)":"1px solid rgba(255,255,255,0.07)";
 
-  // Build expandable body
   function buildBody() {
     const kids = [];
     if (goals1.length||goals2.length) {
@@ -318,9 +364,9 @@ function matchCard(entry, todayISO, showSquads=true) {
           broadcast&&span({style:{fontSize:'10px',color:'#4b5563',background:'rgba(255,255,255,0.05)',padding:'1px 5px',borderRadius:'3px'}},broadcast)
         ),
         div({style:{display:'flex',alignItems:'center',gap:'8px'}},
-          span({style:{fontSize:'11px',color:'#374151',maxWidth:'100px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},ground||round||''),
-          score&&div({style:{display:'flex',flexDirection:'column',alignItems:'center'}},
-            span({style:{fontSize:'14px',fontWeight:'700',color:isLive?'#f87171':'#fff',background:'rgba(0,0,0,0.3)',padding:'2px 8px',borderRadius:'4px',border:isLive?'1px solid rgba(239,68,68,0.4)':'none'}},score),
+          span({style:{fontSize:'11px',color:'#374151',maxWidth:'90px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},ground||round||''),
+          scoreDisp&&div({style:{display:'flex',flexDirection:'column',alignItems:'center'}},
+            span({style:{fontSize:'15px',fontWeight:'800',color:isLive?'#f87171':'#fff',background:'rgba(0,0,0,0.35)',padding:'3px 10px',borderRadius:'6px',border:isLive?'1px solid rgba(239,68,68,0.5)':'none',letterSpacing:'1px',whiteSpace:'nowrap'}},scoreDisp),
             ht&&!isLive&&span({style:{fontSize:'9px',color:'#4b5563'}},ht+' HT'),
             isLive&&detail&&detail!==clock&&span({style:{fontSize:'9px',color:'#f87171'}},detail)
           ),
@@ -379,10 +425,433 @@ function standingsTable(gk, byKey) {
   );
 }
 
-// ─── VIEWS ───────────────────────────────────────────────────────────────────
+// ─── ANNEX C — ALGORITHMIC THIRD-PLACE ASSIGNMENT ────────────────────────────
+// FIFA's official Annex C is a 495-row lookup we don't have a clean source for.
+// Instead, we assign the 8 qualifying 3rd-place teams to the 8 "1X vs 3rd" R32
+// slots using constraint satisfaction: a 3rd-from-group-X can never face 1X
+// (own group winner). This guarantees no duplicate-team R32 matchups and is
+// always solvable. Note: actual FIFA placement may differ in some cases — this
+// is a projection, not the official bracket.
+
+// Slots that receive a 3rd-place team. Value = group letter of the 1X winner.
+const THIRD_SLOTS = [
+  { match: 74, winnerGroup: 'E' },
+  { match: 77, winnerGroup: 'I' },
+  { match: 79, winnerGroup: 'A' },
+  { match: 80, winnerGroup: 'L' },
+  { match: 81, winnerGroup: 'D' },
+  { match: 82, winnerGroup: 'G' },
+  { match: 85, winnerGroup: 'B' },
+  { match: 87, winnerGroup: 'K' },
+];
+
+// Assign 8 qualifying third-place groups (e.g. ['B','C','D','F','H','I','J','K'])
+// to the 8 slots. Returns map: matchNum -> sourceGroup (or null on failure).
+function assignThirds(thirdGroups) {
+  if (thirdGroups.length !== 8) return {};
+  // Sort slots by descending constraint count (fewer valid options first)
+  // For each slot, valid sources = thirdGroups except the slot's own winnerGroup
+  const slots = THIRD_SLOTS.map(s => ({
+    ...s,
+    valid: thirdGroups.filter(g => g !== s.winnerGroup),
+  })).sort((a,b) => a.valid.length - b.valid.length);
+
+  const used = new Set();
+  const result = {};
+  function backtrack(idx) {
+    if (idx === slots.length) return true;
+    const slot = slots[idx];
+    for (const g of slot.valid) {
+      if (used.has(g)) continue;
+      used.add(g);
+      result[slot.match] = g;
+      if (backtrack(idx + 1)) return true;
+      used.delete(g);
+      delete result[slot.match];
+    }
+    return false;
+  }
+  return backtrack(0) ? result : {};
+}
+
+// ─── BRACKET PROJECTION ───────────────────────────────────────────────────────
+function projectBracket(byKey, mode) {
+  const GRPS = 'ABCDEFGHIJKL'.split('');
+  const standings = {};
+  GRPS.forEach(g => { standings[g] = calcStandings(g, byKey); });
+
+  function getConfidence(g, pos) {
+    const rows = standings[g];
+    const gamesPlayed = rows.reduce((s,r)=>s+r.mp,0)/2;
+    const totalGames = 6;
+    if (gamesPlayed === totalGames) return 'confirmed';
+    if (gamesPlayed === 0) return 'unknown';
+    if (rows.length >= 2) {
+      const leader = rows[pos];
+      if (!leader) return 'unknown';
+      if (mode === 'conservative') return gamesPlayed === totalGames ? 'confirmed' : 'unknown';
+      if (mode === 'optimistic') return leader.mp > 0 ? 'projected' : 'unknown';
+      const next = rows[pos + 1];
+      if (!next) return 'projected';
+      const ptDiff = leader.pts - next.pts;
+      const gamesLeft = totalGames - gamesPlayed;
+      if (ptDiff > gamesLeft * 3) return 'confirmed';
+      if (ptDiff >= 3) return 'projected';
+      return 'contested';
+    }
+    return 'unknown';
+  }
+
+  const W = {}, RU = {}, WCONF = {}, RUCONF = {};
+  GRPS.forEach(g => {
+    const rows = standings[g];
+    W[g]  = rows[0]?.team;
+    RU[g] = rows[1]?.team;
+    WCONF[g]  = getConfidence(g, 0);
+    RUCONF[g] = getConfidence(g, 1);
+  });
+
+  // Best 8 thirds by pts, GD, GF, FIFA
+  const thirds = GRPS.map(g => {
+    const r = standings[g][2];
+    return r ? { ...r, group: g, fifa: FIFA[r.team] || 99 } : { team:null, group:g, mp:0,pts:0,gf:0,ga:0,fifa:99 };
+  }).filter(t => t.team).sort((a,b) =>
+    b.pts - a.pts || (b.gf-b.ga) - (a.gf-a.ga) || b.gf - a.gf || a.fifa - b.fifa
+  );
+
+  const top8 = thirds.slice(0, 8);
+  const top8Groups = top8.map(t => t.group);
+  const groupComplete = GRPS.every(g => standings[g].every(r => r.mp === 3));
+  const thirdsConfidence = groupComplete ? 'projected' : (thirds.length >= 8 ? 'projected' : 'unknown');
+
+  // Algorithmic assignment of thirds → slots
+  const thirdAssignment = top8Groups.length === 8 ? assignThirds(top8Groups) : {};
+
+  // Probabilistic mode: also compute the assignment for "9th place team
+  // swapped in" if 8th and 9th are very close — surface as alts.
+  let altAssignment = null;
+  if (mode === 'probabilistic' && thirds.length >= 9) {
+    const t8 = thirds[7], t9 = thirds[8];
+    if (t8 && t9 && Math.abs(t8.pts - t9.pts) <= 1) {
+      const altGroups = [...top8Groups.slice(0,7), t9.group];
+      altAssignment = { groups: altGroups, swapped: t9.team, swappedOut: t8.team, map: assignThirds(altGroups) };
+    }
+  }
+
+  function thirdSlotFor(matchNum) {
+    const assignedGroup = thirdAssignment[matchNum];
+    if (!assignedGroup) return { team:'3rd', confidence:'unknown', alts:[] };
+    const thirdTeam = thirds.find(t => t.group === assignedGroup);
+    const alts = [];
+    if (altAssignment) {
+      const altGroup = altAssignment.map[matchNum];
+      if (altGroup && altGroup !== assignedGroup) {
+        const altTeam = thirds.find(t => t.group === altGroup);
+        if (altTeam) alts.push({ team: altTeam.team, group: altGroup, condition: altAssignment.swapped+' qualifies' });
+      }
+    }
+    return {
+      team: thirdTeam?.team || ('3'+assignedGroup),
+      confidence: thirdsConfidence,
+      alts
+    };
+  }
+
+  function teamSlot(team, confidence) {
+    return { team: team || 'TBD', confidence: confidence || 'unknown', alts: [] };
+  }
+
+  const r32 = [
+    { num:73, home: teamSlot(RU['A'],RUCONF['A']), away: teamSlot(RU['B'],RUCONF['B']), label:'M73' },
+    { num:74, home: teamSlot(W['E'],WCONF['E']),   away: thirdSlotFor(74), label:'M74' },
+    { num:75, home: teamSlot(W['F'],WCONF['F']),   away: teamSlot(RU['C'],RUCONF['C']), label:'M75' },
+    { num:76, home: teamSlot(W['C'],WCONF['C']),   away: teamSlot(RU['F'],RUCONF['F']), label:'M76' },
+    { num:77, home: teamSlot(W['I'],WCONF['I']),   away: thirdSlotFor(77), label:'M77' },
+    { num:78, home: teamSlot(RU['E'],RUCONF['E']), away: teamSlot(RU['I'],RUCONF['I']), label:'M78' },
+    { num:79, home: teamSlot(W['A'],WCONF['A']),   away: thirdSlotFor(79), label:'M79' },
+    { num:80, home: teamSlot(W['L'],WCONF['L']),   away: thirdSlotFor(80), label:'M80' },
+    { num:81, home: teamSlot(W['D'],WCONF['D']),   away: thirdSlotFor(81), label:'M81' },
+    { num:82, home: teamSlot(W['G'],WCONF['G']),   away: thirdSlotFor(82), label:'M82' },
+    { num:83, home: teamSlot(RU['K'],RUCONF['K']), away: teamSlot(RU['L'],RUCONF['L']), label:'M83' },
+    { num:84, home: teamSlot(W['H'],WCONF['H']),   away: teamSlot(RU['J'],RUCONF['J']), label:'M84' },
+    { num:85, home: teamSlot(W['B'],WCONF['B']),   away: thirdSlotFor(85), label:'M85' },
+    { num:86, home: teamSlot(W['J'],WCONF['J']),   away: teamSlot(RU['H'],RUCONF['H']), label:'M86' },
+    { num:87, home: teamSlot(W['K'],WCONF['K']),   away: thirdSlotFor(87), label:'M87' },
+    { num:88, home: teamSlot(RU['D'],RUCONF['D']), away: teamSlot(RU['G'],RUCONF['G']), label:'M88' },
+  ];
+
+  return { r32, thirds, standings };
+}
+
+// ─── BRACKET VISUAL HELPERS ──────────────────────────────────────────────────
+function projSlotEl(projSlot) {
+  if (!projSlot) return span({style:{color:'#374151',fontSize:'11px'}},'TBD');
+  const { team, confidence, alts=[] } = projSlot;
+  const color = confidence === 'confirmed' ? '#4ade80'
+    : confidence === 'projected'  ? '#93c5fd'
+    : confidence === 'contested'  ? '#fbbf24'
+    : '#6b7280';
+  const bg = confidence === 'confirmed' ? 'rgba(74,222,128,0.1)'
+    : confidence === 'projected'  ? 'rgba(147,197,253,0.08)'
+    : confidence === 'contested'  ? 'rgba(251,191,36,0.1)'
+    : 'rgba(255,255,255,0.04)';
+  const altsEl = div({style:{display:'none',marginTop:'4px'}});
+  const mainEl = div({style:{display:'flex',alignItems:'center',gap:'3px',padding:'3px 6px',borderRadius:'4px',background:bg,border:'1px solid '+color+'44',cursor:alts.length?'pointer':'default',minWidth:0}},
+    span({style:{fontSize:'13px',flexShrink:0}}, FLAG[team]||'❓'),
+    span({style:{fontSize:'10px',fontWeight:600,color:team==='TBD'?'#374151':'#e2e8f0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}, team),
+    alts.length && span({style:{fontSize:'9px',color:color,flexShrink:0,marginLeft:'2px'}}, '+'+alts.length)
+  );
+  if (alts.length) {
+    let open = false;
+    mainEl.onclick = (e) => { e.stopPropagation(); open=!open; altsEl.style.display=open?'block':'none'; };
+    alts.forEach(alt => {
+      altsEl.appendChild(div({style:{display:'flex',alignItems:'center',gap:'3px',padding:'2px 4px',borderRadius:'3px',background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.2)',marginBottom:'2px'}},
+        span({style:{fontSize:'11px'}}, FLAG[alt.team]||'❓'),
+        span({style:{fontSize:'9px',color:'#fbbf24'}}, alt.team),
+        span({style:{fontSize:'8px',color:'#4b5563',marginLeft:'2px'}}, 'if '+alt.condition)
+      ));
+    });
+  }
+  return div({}, mainEl, altsEl);
+}
+
+function connector(count,sh,gap){
+  const totalH=count*sh+(count-1)*gap;
+  const el=svg({width:'20',height:String(totalH),style:{flexShrink:0}});
+  for(let i=0;i<count;i+=2){const ty=i*(sh+gap)+sh/2,by=(i+1)*(sh+gap)+sh/2,my=(ty+by)/2;['M0,'+ty+' H10 V'+my,'M0,'+by+' H10 V'+my,'M10,'+my+' H20'].forEach(d=>el.appendChild(path({d,fill:'none',stroke:'rgba(255,255,255,0.15)','stroke-width':'1.5'})));}
+  return el;
+}
+
+function colLabel(t){return div({style:{fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase',marginBottom:'8px',textAlign:'center',whiteSpace:'nowrap'}},t);}
+
+function pbslot(projHome, projAway, entry, small=false) {
+  const w = small ? 128 : 148;
+  const espnE = entry ? $espn.get()[pkey(entry.home||'',entry.away||'')] : null;
+  const rawScore = (espnE&&(espnE.isLive||espnE.isPost)) ? espnE.score : entry?.score;
+  const sc = parseScore(rawScore);
+  const hW = sc ? sc.h>sc.a : false;
+  const aW = sc ? sc.a>sc.h : false;
+  const hScore = sc !== null ? String(sc.h) : null;
+  const aScore = sc !== null ? String(sc.a) : null;
+  const isLive = !!(espnE&&espnE.isLive);
+  const ds = entry?.date ? new Date(entry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+
+  const homeProj = projHome || (entry ? {team:entry.home,confidence:'confirmed',alts:[]} : {team:'TBD',confidence:'unknown',alts:[]});
+  const awayProj = projAway || (entry ? {team:entry.away,confidence:'confirmed',alts:[]} : {team:'TBD',confidence:'unknown',alts:[]});
+
+  const makeRow = (proj, won, scoreVal, isHomeRow) => {
+    const altsEl = div({style:{display:'none',padding:'2px 4px'}});
+    const hasAlts = proj.alts && proj.alts.length > 0;
+    proj.alts?.forEach(alt => {
+      altsEl.appendChild(div({style:{display:'flex',alignItems:'center',gap:'3px',padding:'2px',marginBottom:'1px'}},
+        span({style:{fontSize:'10px'}},FLAG[alt.team]||'❓'),
+        span({style:{fontSize:'9px',color:'#fbbf24'}},alt.team),
+        span({style:{fontSize:'8px',color:'#4b5563'}},' if '+alt.condition)
+      ));
+    });
+    const color = proj.confidence==='confirmed'?null:proj.confidence==='projected'?'#93c5fd':proj.confidence==='contested'?'#fbbf24':'#6b7280';
+    const row = div({style:{display:'flex',alignItems:'center',gap:'3px',padding:'4px 6px',
+      borderBottom: isHomeRow?'1px solid rgba(255,255,255,0.07)':'none',
+      background: won?'rgba(59,130,246,0.15)':'transparent',
+      cursor: hasAlts?'pointer':'default'}},
+      span({style:{fontSize:(small?11:13)+'px',flexShrink:0}}, FLAG[proj.team]||'❓'),
+      span({style:{fontSize:(small?9:11)+'px',color:won?'#fff':color||'#9ca3af',fontWeight:won?'700':'400',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+        proj.team+(color&&!won?' ✦':'')
+      ),
+      scoreVal!==null && span({style:{fontSize:(small?11:13)+'px',fontWeight:'700',color:isLive?'#f87171':won?'#fff':'#6b7280',minWidth:'14px',textAlign:'right'}}, scoreVal),
+      hasAlts && span({style:{fontSize:'9px',color:'#fbbf24',flexShrink:0}},'+'+proj.alts.length)
+    );
+    if (hasAlts) {
+      let open = false;
+      row.onclick = (e) => { e.stopPropagation(); open=!open; altsEl.style.display=open?'block':'none'; };
+    }
+    return div({}, row, altsEl);
+  };
+
+  return div({style:{width:w+'px',borderRadius:'6px',overflow:'hidden',
+    border: isLive?'1px solid rgba(239,68,68,0.4)':'1px solid rgba(255,255,255,0.1)',
+    background:'rgba(255,255,255,0.04)',flexShrink:0}},
+    makeRow(homeProj, hW, hScore, true),
+    makeRow(awayProj, aW, aScore, false),
+    ds&&!small&&div({style:{padding:'1px 6px 3px',background:'rgba(0,0,0,0.2)',fontSize:'9px',color:'#374151'}},
+      ds+(entry?.time?' · '+entry.time:'')+(isLive&&espnE?.clock?' · '+espnE.clock:''))
+  );
+}
+
+function buildBracketView() {
+  const data = $data.get()||{};
+  const byKey = data.byKey||{};
+  const byNum = data.byNum||{};
+  const todayISO = $today.get();
+  let mode = 'optimistic';
+  let view = 'full';
+
+  const content = div({});
+  const modeBtns = div({style:{display:'flex',gap:'6px',marginBottom:'8px',flexWrap:'wrap'}});
+  const viewBtns = div({style:{display:'flex',gap:'6px',marginBottom:'12px'}});
+  const legend = div({style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'12px',padding:'8px 12px',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}});
+  const note = div({style:{padding:'8px 12px',borderRadius:'8px',marginBottom:'12px',background:'rgba(59,130,246,0.05)',border:'1px solid rgba(59,130,246,0.15)',fontSize:'10px',color:'#6b7280',lineHeight:'1.4'}},
+    span({style:{color:'#93c5fd',fontWeight:600}},'Note: '),
+    '3rd-place teams are assigned to slots using a constraint-satisfaction algorithm (no team faces its own group winner). FIFA may differ in specific cases — this is a projection.'
+  );
+
+  function updateLegend() {
+    legend.innerHTML = '';
+    const items = [
+      {color:'#4ade80', label:'Confirmed'},
+      {color:'#93c5fd', label:'Projected'},
+      ...(mode==='probabilistic'?[{color:'#fbbf24',label:'Contested (tap for alts)'}]:[]),
+      {color:'#6b7280', label:'Unknown'},
+    ];
+    items.forEach(({color,label}) => {
+      legend.appendChild(div({style:{display:'flex',alignItems:'center',gap:'5px'}},
+        div({style:{width:'8px',height:'8px',borderRadius:'50%',background:color}}),
+        span({style:{fontSize:'10px',color:'#9ca3af'}},label)
+      ));
+    });
+  }
+
+  const MODES = [{id:'conservative',l:'🔒 Confirmed'},{id:'optimistic',l:'📊 Projected'},{id:'probabilistic',l:'🔀 Scenarios'}];
+  const VIEWS = [{id:'full',l:'🏆 Full Bracket'},{id:'r32',l:'Round of 32'}];
+
+  function updateBtnStyles() {
+    modeBtns.querySelectorAll('button').forEach(b => {
+      const active = b.dataset.m === mode;
+      b.style.background = active?'rgba(59,130,246,0.3)':'rgba(255,255,255,0.05)';
+      b.style.border = active?'1px solid rgba(59,130,246,0.6)':'1px solid rgba(255,255,255,0.1)';
+      b.style.color = active?'#93c5fd':'#94a3b8';
+    });
+    viewBtns.querySelectorAll('button').forEach(b => {
+      const active = b.dataset.v === view;
+      b.style.background = active?'rgba(59,130,246,0.3)':'rgba(255,255,255,0.05)';
+      b.style.border = active?'1px solid rgba(59,130,246,0.6)':'1px solid rgba(255,255,255,0.1)';
+      b.style.color = active?'#93c5fd':'#94a3b8';
+    });
+  }
+
+  MODES.forEach(m => {
+    modeBtns.appendChild(btn({'data-m':m.id, style:{padding:'5px 10px',borderRadius:'6px',fontSize:'11px',fontWeight:500,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit'},
+      onclick:function(){ mode=m.id; render(); }}, m.l));
+  });
+  VIEWS.forEach(v => {
+    viewBtns.appendChild(btn({'data-v':v.id, style:{padding:'5px 10px',borderRadius:'6px',fontSize:'11px',fontWeight:500,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit'},
+      onclick:function(){ view=v.id; render(); }}, v.l));
+  });
+
+  function render() {
+    content.innerHTML = '';
+    updateBtnStyles();
+    updateLegend();
+
+    const proj = projectBracket(byKey, mode);
+    const r32Map = {};
+    proj.r32.forEach(m => { r32Map[m.num] = m; });
+
+    function getSlots(num) {
+      const pm = r32Map[num];
+      const entry = byNum[num];
+      if (!pm) return { home:{team:'TBD',confidence:'unknown',alts:[]}, away:{team:'TBD',confidence:'unknown',alts:[]}, entry };
+      if (entry?.home && (entry.score || entry.date < todayISO)) {
+        return {
+          home: {team:entry.home, confidence:'confirmed', alts:[]},
+          away: {team:entry.away, confidence:'confirmed', alts:[]},
+          entry
+        };
+      }
+      return { home: pm.home, away: pm.away, entry };
+    }
+
+    function makeBslot(num, small=false) {
+      const {home, away, entry} = getSlots(num);
+      return pbslot(home, away, entry, small);
+    }
+
+    function makeBhalf(nums, small=false) {
+      const sh = small?50:64, gap=10;
+      const slots = div({style:{display:'flex',flexDirection:'column',gap:gap+'px'}});
+      nums.forEach(n => slots.appendChild(makeBslot(n, small)));
+      return div({style:{display:'flex',alignItems:'center'}}, slots, connector(nums.length,sh,gap));
+    }
+
+    if (view === 'r32') {
+      const r32All = [73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88];
+      r32All.forEach(num => {
+        const {home, away, entry} = getSlots(num);
+        const card = div({style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px',borderRadius:'8px',marginBottom:'6px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}},
+          span({style:{fontSize:'10px',color:'#374151',minWidth:'28px',flexShrink:0}}, 'M'+num),
+          div({style:{flex:1,minWidth:0}}, projSlotEl(home)),
+          span({style:{fontSize:'10px',color:'#4b5563',padding:'0 4px'}}, 'vs'),
+          div({style:{flex:1,minWidth:0}}, projSlotEl(away)),
+          entry?.date && span({style:{fontSize:'10px',color:'#4b5563',flexShrink:0}}, new Date(entry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}))
+        );
+        content.appendChild(card);
+      });
+    } else {
+      content.appendChild(div({style:{fontSize:'11px',color:'#4b5563',marginBottom:'8px'}},'← Scroll to see full bracket'));
+      const scrollWrap = div({style:{overflowX:'auto',paddingBottom:'16px'}});
+      const row = div({style:{display:'flex',alignItems:'center',minWidth:'980px',padding:'4px 0'}});
+
+      const BL = {r32:[74,76,73,75,78,77,81,82], r16:[89,90,91,92], qf:[97,99]};
+      const BR = {r32:[83,84,85,87,80,86,88,79], r16:[93,94,95,96], qf:[98,100]};
+
+      [[colLabel('R32'), makeBhalf(BL.r32,true)],
+       [colLabel('R16'), makeBhalf(BL.r16)],
+       [colLabel('QF'),  makeBhalf(BL.qf)]].forEach(([lbl,half])=>{
+        const c=div({style:{display:'flex',flexDirection:'column',alignItems:'center'}});
+        c.appendChild(lbl);c.appendChild(half);row.appendChild(c);
+      });
+
+      const center = div({style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'8px',minWidth:'160px',padding:'0 8px'}});
+      center.appendChild(div({style:{fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase'}},'SF'));
+      center.appendChild(makeBslot(101));
+      center.appendChild(div({style:{width:'100%',height:'1px',background:'rgba(255,255,255,0.05)'}}));
+      center.appendChild(div({style:{fontSize:'11px',fontWeight:'700',color:'#fbbf24'}},'🏆 FINAL'));
+      center.appendChild(makeBslot(104));
+      center.appendChild(div({style:{fontSize:'10px',color:'#6b7280'}},'3rd Place'));
+      center.appendChild(makeBslot(103));
+      center.appendChild(div({style:{width:'100%',height:'1px',background:'rgba(255,255,255,0.05)'}}));
+      center.appendChild(div({style:{fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase'}},'SF'));
+      center.appendChild(makeBslot(102));
+      row.appendChild(center);
+
+      [[colLabel('QF'),  makeBhalf(BR.qf)],
+       [colLabel('R16'), makeBhalf(BR.r16)],
+       [colLabel('R32'), makeBhalf(BR.r32,true)]].forEach(([lbl,half])=>{
+        const c=div({style:{display:'flex',flexDirection:'column',alignItems:'center'}});
+        c.appendChild(lbl);c.appendChild(half);row.appendChild(c);
+      });
+
+      scrollWrap.appendChild(row);
+      content.appendChild(scrollWrap);
+
+      content.appendChild(div({style:{marginTop:'16px',fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:'8px'}},'Best 3rd Place Standings'));
+      const thirdsGrid = div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px',marginBottom:'8px'}});
+      proj.thirds.slice(0,9).forEach((t,i) => {
+        if(!t.team) return;
+        thirdsGrid.appendChild(div({style:{display:'flex',alignItems:'center',gap:'6px',padding:'5px 8px',borderRadius:'6px',background:i<8?'rgba(59,130,246,0.06)':'rgba(239,68,68,0.06)',border:i<8?'1px solid rgba(59,130,246,0.15)':'1px solid rgba(239,68,68,0.15)'}},
+          span({style:{fontSize:'12px',color:i<8?'#9ca3af':'#6b7280',fontFamily:'monospace',minWidth:'16px'}},i+1),
+          span({style:{fontSize:'14px'}},FLAG[t.team]||'🏳'),
+          div({style:{minWidth:0}},
+            div({style:{fontSize:'11px',color:i<8?'#e2e8f0':'#6b7280',fontWeight:i<8?600:400,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},t.team),
+            div({style:{fontSize:'9px',color:'#4b5563'}},t.pts+'pts '+(t.gf-t.ga>=0?'+':'')+(t.gf-t.ga)+' Grp '+t.group)
+          ),
+          i===7&&span({style:{fontSize:'9px',color:'#4ade80',marginLeft:'auto',flexShrink:0}},'✓ in'),
+          i===8&&span({style:{fontSize:'9px',color:'#f87171',marginLeft:'auto',flexShrink:0}},'✗ out')
+        ));
+      });
+      content.appendChild(thirdsGrid);
+    }
+  }
+
+  render();
+  return div({}, modeBtns, viewBtns, legend, note, content);
+}
+
+// ─── FEED STATUS BAR ─────────────────────────────────────────────────────────
 function buildFeedStatus() {
   const st = $status.get();
   const espnSt = $espnStatus.get();
+  const sq = $squads.get();
   const isESPNLive = espnSt==="live";
 
   const dot = div({style:{width:'8px',height:'8px',borderRadius:'50%',background:st==='done'?'#4ade80':st==='error'?'#f87171':'#60a5fa',flexShrink:0}});
@@ -392,16 +861,23 @@ function buildFeedStatus() {
     st==='loading'?'Loading fixtures…':st==='done'?'openfootball · live':'Fixture source unavailable'
   );
 
+  const sqText = sq.loaded
+    ? span({style:{color:'#6b7280',fontSize:'11px'}}, ' · '+sq.count+' squads')
+    : sq.error
+      ? span({style:{color:'#f87171',fontSize:'11px'}}, ' · squad data unavailable')
+      : span({style:{color:'#60a5fa',fontSize:'11px'}}, ' · loading squads…');
+
   const espnBadge = isESPNLive ? span({style:{display:'inline-flex',alignItems:'center',gap:'4px',background:'rgba(239,68,68,0.15)',border:'1px solid rgba(239,68,68,0.4)',borderRadius:'4px',padding:'1px 6px',fontSize:'10px',fontWeight:'700',color:'#f87171',marginLeft:'6px'}},
     div({style:{width:'5px',height:'5px',borderRadius:'50%',background:'#f87171',animation:'pulse 1s ease-in-out infinite'}}),
     'ESPN LIVE'
   ) : null;
 
-  const refreshBtn = btn({style:{marginLeft:'auto',padding:'3px 8px',borderRadius:'4px',background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'#9ca3af',fontSize:'12px'},onclick:function(){loadData();loadESPN();}},'\u21BB');
+  const refreshBtn = btn({style:{marginLeft:'auto',padding:'3px 8px',borderRadius:'4px',background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'#9ca3af',fontSize:'12px'},onclick:function(){loadData();loadESPN();loadSquads();}},'\u21BB');
 
-  return div({style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px',borderRadius:'8px',marginBottom:'16px',fontSize:'12px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}},dot,ofText,...(espnBadge?[espnBadge]:[]),refreshBtn);
+  return div({style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px',borderRadius:'8px',marginBottom:'16px',fontSize:'12px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}},dot,ofText,sqText,...(espnBadge?[espnBadge]:[]),refreshBtn);
 }
 
+// ─── VIEWS: SCHEDULE / GROUPS / RANKINGS ─────────────────────────────────────
 function buildScheduleView() {
   let sf='all', tf='';
   const data = $data.get(); const todayISO = $today.get();
@@ -422,18 +898,29 @@ function buildScheduleView() {
       return true;
     }).forEach(e=>{const d=e.date||'TBD';if(!byDate[d])byDate[d]=[];byDate[d].push(e);});
 
-    Object.entries(byDate).sort(([a],[b])=>a.localeCompare(b)).forEach(([date,entries])=>{
+    const sortedDates = Object.keys(byDate).sort((a,b)=>{
+      if(a===todayISO) return -1;
+      if(b===todayISO) return 1;
+      const aFuture = a>=todayISO, bFuture = b>=todayISO;
+      if(aFuture&&bFuture) return a.localeCompare(b);
+      if(!aFuture&&!bFuture) return b.localeCompare(a);
+      return aFuture?-1:1;
+    });
+
+    sortedDates.forEach((date)=>{
+      const entries = byDate[date];
       const isToday = date===todayISO;
       const d = new Date(date+'T12:00:00');
+      const isPast = date<todayISO;
       const dayDiv = div({id:isToday?'today-anchor':undefined,style:{marginBottom:'20px',scrollMarginTop:'16px'}},
         div({style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}},
-          div({style:{flex:1,height:'1px',background:isToday?'rgba(217,119,6,0.3)':'rgba(255,255,255,0.07)'}}),
-          span({style:{fontSize:'11px',fontWeight:'600',color:isToday?'#fbbf24':'#9ca3af',flexShrink:0,whiteSpace:'nowrap'}},
+          div({style:{flex:1,height:'1px',background:isToday?'rgba(217,119,6,0.3)':isPast?'rgba(255,255,255,0.04)':'rgba(255,255,255,0.07)'}}),
+          span({style:{fontSize:'11px',fontWeight:'600',color:isToday?'#fbbf24':isPast?'#374151':'#9ca3af',flexShrink:0,whiteSpace:'nowrap'}},
             ...(isToday?[span({style:{marginRight:'4px'}},'★ TODAY — ')]:[]),
             d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})
           ),
           SL[entries[0].stage]&&span({style:{fontSize:'11px',color:'#374151',flexShrink:0}},SL[entries[0].stage]),
-          div({style:{flex:1,height:'1px',background:isToday?'rgba(217,119,6,0.3)':'rgba(255,255,255,0.07)'}})
+          div({style:{flex:1,height:'1px',background:isToday?'rgba(217,119,6,0.3)':isPast?'rgba(255,255,255,0.04)':'rgba(255,255,255,0.07)'}})
         ),
         ...entries.map(e=>matchCard(e,todayISO,e.stage==='group'))
       );
@@ -495,102 +982,6 @@ function buildGroupsView() {
   return div({},groupBtns,standingsContainer,div({style:{fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:'8px'}},'Matches — tap to expand'),matchesContainer);
 }
 
-function bslot(entry,small=false){
-  const w=small?128:148;
-  if(!entry)return div({style:{width:w+'px',height:(small?50:64)+'px',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.08)',background:'rgba(255,255,255,0.02)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:'11px',color:'#374151'}},'TBD');
-  const{home,away,score}=entry;const sc=parseScore(score);const hW=sc?sc.h>sc.a:false;const aW=sc?sc.a>sc.h:false;
-  const ds=entry.date?new Date(entry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
-  return div({style:{width:w+'px',borderRadius:'6px',overflow:'hidden',border:'1px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.04)',flexShrink:0}},
-    ...[{t:home,w:hW,s:score?score[0]:null},{t:away,w:aW,s:score?score[2]:null}].map(({t,w,s},idx)=>
-      div({style:{display:'flex',alignItems:'center',gap:'4px',padding:'4px 7px',borderBottom:idx===0?'1px solid rgba(255,255,255,0.07)':'none',background:w?'rgba(59,130,246,0.15)':'transparent'}},
-        span({style:{fontSize:(small?11:13)+'px',flexShrink:0}},FLAG[t]||'❓'),
-        span({style:{fontSize:(small?9:11)+'px',color:w?'#e2e8f0':'#9ca3af',fontWeight:w?'700':'400',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},t),
-        score&&span({style:{fontSize:(small?10:12)+'px',fontWeight:'700',color:w?'#fff':'#6b7280',minWidth:'12px',textAlign:'right'}},s||'')
-      )
-    ),
-    ds&&!small&&div({style:{padding:'1px 7px 3px',background:'rgba(0,0,0,0.2)',fontSize:'9px',color:'#374151'}},ds+' '+(entry.time||''))
-  );
-}
-
-function connector(count,sh,gap){
-  const totalH=count*sh+(count-1)*gap;
-  const el=svg({width:'20',height:String(totalH),style:{flexShrink:0}});
-  for(let i=0;i<count;i+=2){const ty=i*(sh+gap)+sh/2,by=(i+1)*(sh+gap)+sh/2,my=(ty+by)/2;['M0,'+ty+' H10 V'+my,'M0,'+by+' H10 V'+my,'M10,'+my+' H20'].forEach(d=>el.appendChild(path({d,fill:'none',stroke:'rgba(255,255,255,0.15)','stroke-width':'1.5'})));}
-  return el;
-}
-
-function bhalf(byNum,nums,small=false){
-  const sh=small?50:64,gap=10;
-  const slots=div({style:{display:'flex',flexDirection:'column',gap:gap+'px'}});
-  nums.forEach(n=>slots.appendChild(bslot(byNum&&byNum[n],small)));
-  return div({style:{display:'flex',alignItems:'center'}},slots,connector(nums.length,sh,gap));
-}
-
-function colLabel(t){return div({style:{fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase',marginBottom:'8px',textAlign:'center',whiteSpace:'nowrap'}},t);}
-
-function buildBracketView(){
-  const byNum=($data.get()||{}).byNum||{};const todayISO=$today.get();
-  let view='full';
-
-  const BL={r32:[74,76,73,75,78,77,81,82],r16:[89,90,91,92],qf:[97,99]};
-  const BR={r32:[83,84,85,87,80,86,88,79],r16:[93,94,95,96],qf:[98,100]};
-  const r32All=[...new Set([...BL.r32,...BR.r32])].sort((a,b)=>a-b);
-
-  const content=div({});
-  const toggleBtns=div({style:{display:'flex',gap:'8px',marginBottom:'12px'}});
-
-  function renderContent(){
-    content.innerHTML='';
-    toggleBtns.querySelectorAll('button').forEach(b=>{
-      const active=b.dataset.v===view;
-      b.style.background=active?'rgba(59,130,246,0.3)':'rgba(255,255,255,0.05)';
-      b.style.border=active?'1px solid rgba(59,130,246,0.6)':'1px solid rgba(255,255,255,0.1)';
-      b.style.color=active?'#93c5fd':'#94a3b8';
-    });
-    if(view==='r32'){
-      r32All.forEach(n=>{const e=byNum[n];if(e)content.appendChild(matchCard(e,todayISO,false));});
-    } else {
-      content.appendChild(div({style:{fontSize:'11px',color:'#4b5563',marginBottom:'8px'}},'← Scroll to see full bracket'));
-      const scrollWrap=div({style:{overflowX:'auto',paddingBottom:'16px'}});
-      const row=div({style:{display:'flex',alignItems:'center',minWidth:'980px',padding:'4px 0'}});
-      // Left side
-      [
-        [colLabel('Round of 32'),bhalf(byNum,BL.r32,true)],
-        [colLabel('Round of 16'),bhalf(byNum,BL.r16)],
-        [colLabel('Quarters'),bhalf(byNum,BL.qf)],
-      ].forEach(([lbl,half])=>{const c=div({style:{display:'flex',flexDirection:'column',alignItems:'center'}});c.appendChild(lbl);c.appendChild(half);row.appendChild(c);});
-      // Center
-      const center=div({style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'8px',minWidth:'160px',padding:'0 8px'}});
-      center.appendChild(div({style:{fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase'}},'SF'));
-      center.appendChild(bslot(byNum[101]));
-      center.appendChild(div({style:{width:'100%',height:'1px',background:'rgba(255,255,255,0.05)'}}));
-      center.appendChild(div({style:{fontSize:'11px',fontWeight:'700',color:'#fbbf24'}},'🏆 FINAL'));
-      center.appendChild(bslot(byNum[104]));
-      center.appendChild(div({style:{fontSize:'10px',color:'#6b7280'}},'3rd Place'));
-      center.appendChild(bslot(byNum[103]));
-      center.appendChild(div({style:{width:'100%',height:'1px',background:'rgba(255,255,255,0.05)'}}));
-      center.appendChild(div({style:{fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase'}},'SF'));
-      center.appendChild(bslot(byNum[102]));
-      row.appendChild(center);
-      // Right side
-      [
-        [colLabel('Quarters'),bhalf(byNum,BR.qf)],
-        [colLabel('Round of 16'),bhalf(byNum,BR.r16)],
-        [colLabel('Round of 32'),bhalf(byNum,BR.r32,true)],
-      ].forEach(([lbl,half])=>{const c=div({style:{display:'flex',flexDirection:'column',alignItems:'center'}});c.appendChild(lbl);c.appendChild(half);row.appendChild(c);});
-      scrollWrap.appendChild(row);
-      content.appendChild(scrollWrap);
-    }
-  }
-
-  [{id:'full',l:'🏆 Full Bracket'},{id:'r32',l:'Round of 32'}].forEach(v=>{
-    toggleBtns.appendChild(btn({'data-v':v.id,style:{padding:'6px 14px',borderRadius:'8px',fontSize:'12px',fontWeight:'500',background:view===v.id?'rgba(59,130,246,0.3)':'rgba(255,255,255,0.05)',border:view===v.id?'1px solid rgba(59,130,246,0.6)':'1px solid rgba(255,255,255,0.1)',color:view===v.id?'#93c5fd':'#94a3b8'},onclick:function(){view=v.id;renderContent();}},v.l));
-  });
-
-  renderContent();
-  return div({},toggleBtns,content);
-}
-
 function buildRankingsView(){
   let fl=null, search='';
   const allTeams=Object.keys(FIFA).sort((a,b)=>FIFA[a]-FIFA[b]);
@@ -609,7 +1000,7 @@ function buildRankingsView(){
       const body=div({style:{padding:'0 12px 12px',borderTop:'1px solid rgba(255,255,255,0.05)'}});
       if(sq){body.appendChild(squadPanel(team));}
       const arrow=span({style:{fontSize:'11px',color:'#4b5563',flexShrink:0}},'▼');
-      const barWrap=sq?div({style:{flex:1,minWidth:0}},leagueBar(getLC(sq),sq.length)):span({style:{flex:1,fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'limited');
+      const barWrap=sq?div({style:{flex:1,minWidth:0}},leagueBar(getLC(sq),sq.length)):span({style:{flex:1,fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},$squads.get().loaded?'no data':'loading…');
       const row=div({style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px'}},
         span({style:{fontSize:'11px',fontFamily:'monospace',color:rank<=5?'#fbbf24':rank<=15?'#94a3b8':'#4b5563',width:'20px',textAlign:'right',flexShrink:0}},rank),
         span({style:{fontSize:'20px',flexShrink:0}},FLAG[team]||'🏳'),
@@ -674,9 +1065,9 @@ function buildApp(){
     tabButtons.appendChild(btn({'data-tab':t.id,style:{padding:'8px 12px',fontSize:'13px',fontWeight:'500',borderRadius:'8px 8px 0 0',whiteSpace:'nowrap',background:$tab.get()===t.id?'rgba(255,255,255,0.07)':'transparent',borderBottom:$tab.get()===t.id?'2px solid #3b82f6':'2px solid transparent',color:$tab.get()===t.id?'#e2e8f0':'#6b7280',border:'none'},onclick:function(){$tab.set(t.id);renderContent();}},t.l));
   });
 
-  // Re-render on data or ESPN score changes
   $data.sub(renderContent);
   $espn.sub(renderContent);
+  $squads.sub(renderContent);
   $status.sub(()=>{
     const fs=contentArea.firstChild;if(fs){contentArea.replaceChild(buildFeedStatus(),fs);}
   });
@@ -684,7 +1075,6 @@ function buildApp(){
     const fs=contentArea.firstChild;if(fs){contentArea.replaceChild(buildFeedStatus(),fs);}
   });
 
-  // "Today" button
   const todayBtn=btn({id:'today-btn',style:{flexShrink:0,display:'none',alignItems:'center',gap:'6px',padding:'6px 12px',borderRadius:'8px',fontSize:'12px',fontWeight:'600',background:'rgba(217,119,6,0.2)',border:'1px solid rgba(217,119,6,0.55)',color:'#fbbf24'},onclick:function(){$tab.set('schedule');renderContent();setTimeout(()=>{const el=document.getElementById('today-anchor');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},80);}});
   function updateTodayBtn(){const n=($data.get()?$data.get().all:[]).filter(e=>e.date===$today.get()).length;todayBtn.textContent='';todayBtn.appendChild(span({},'★ '+n+' Today'));todayBtn.style.display=n>0?'flex':'none';}
   $data.sub(updateTodayBtn);
