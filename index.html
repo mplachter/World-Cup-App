@@ -425,37 +425,40 @@ function standingsTable(gk, byKey) {
   );
 }
 
-// ─── ANNEX C — ALGORITHMIC THIRD-PLACE ASSIGNMENT ────────────────────────────
-// FIFA's official Annex C is a 495-row lookup we don't have a clean source for.
-// Instead, we assign the 8 qualifying 3rd-place teams to the 8 "1X vs 3rd" R32
-// slots using constraint satisfaction: a 3rd-from-group-X can never face 1X
-// (own group winner). This guarantees no duplicate-team R32 matchups and is
-// always solvable. Note: actual FIFA placement may differ in some cases — this
-// is a projection, not the official bracket.
-
-// Slots that receive a 3rd-place team. Value = group letter of the 1X winner.
-const THIRD_SLOTS = [
-  { match: 74, winnerGroup: 'E' },
-  { match: 77, winnerGroup: 'I' },
-  { match: 79, winnerGroup: 'A' },
-  { match: 80, winnerGroup: 'L' },
-  { match: 81, winnerGroup: 'D' },
-  { match: 82, winnerGroup: 'G' },
-  { match: 85, winnerGroup: 'B' },
-  { match: 87, winnerGroup: 'K' },
+// ─── ANNEX C — REAL FIFA 8×5 SLOT MAPPING ────────────────────────────────────
+// Each "1X vs 3rd" R32 slot only accepts a 3rd-place team from one of 5 specific
+// groups, per FIFA's published Annex C. We backtrack over the 5-option pool per
+// slot to find a valid assignment given the 8 qualifying 3rd-place groups.
+// FIFA's 495-row table picks ONE canonical assignment per scenario; we pick a
+// valid one (may differ from FIFA's exact choice in some cases).
+const ANNEX_C_SLOTS = [
+  { match: 74, winnerGroup: 'E', allowed: ['A','B','C','D','F'] },
+  { match: 77, winnerGroup: 'I', allowed: ['C','D','F','G','H'] },
+  { match: 79, winnerGroup: 'A', allowed: ['C','E','F','H','I'] },
+  { match: 80, winnerGroup: 'L', allowed: ['E','H','I','J','K'] },
+  { match: 81, winnerGroup: 'D', allowed: ['B','E','F','I','J'] },
+  { match: 82, winnerGroup: 'G', allowed: ['A','E','H','I','J'] },
+  { match: 85, winnerGroup: 'B', allowed: ['E','F','G','I','J'] },
+  { match: 87, winnerGroup: 'K', allowed: ['D','E','I','J','L'] },
 ];
 
-// Assign 8 qualifying third-place groups (e.g. ['B','C','D','F','H','I','J','K'])
-// to the 8 slots. Returns map: matchNum -> sourceGroup (or null on failure).
 function assignThirds(thirdGroups) {
   if (thirdGroups.length !== 8) return {};
-  // Sort slots by descending constraint count (fewer valid options first)
-  // For each slot, valid sources = thirdGroups except the slot's own winnerGroup
-  const slots = THIRD_SLOTS.map(s => ({
-    ...s,
-    valid: thirdGroups.filter(g => g !== s.winnerGroup),
-  })).sort((a,b) => a.valid.length - b.valid.length);
-
+  // Per trial, shuffle valid options so we don't always pick the same canonical
+  // assignment. Multiple slot assignments may be valid for the same set of 8
+  // qualifying groups; FIFA's Annex C picks one specific arrangement we don't
+  // have access to. Randomizing spreads probability mass across all valid
+  // arrangements, which is closer to "uniform over uncertainty" than always
+  // picking the first solution.
+  const slots = ANNEX_C_SLOTS.map(s => {
+    const valid = thirdGroups.filter(g => s.allowed.includes(g));
+    // Fisher-Yates in place
+    for (let i = valid.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i+1)) | 0;
+      [valid[i], valid[j]] = [valid[j], valid[i]];
+    }
+    return { ...s, valid };
+  }).sort((a,b) => a.valid.length - b.valid.length);
   const used = new Set();
   const result = {};
   function backtrack(idx) {
@@ -472,6 +475,149 @@ function assignThirds(thirdGroups) {
     return false;
   }
   return backtrack(0) ? result : {};
+}
+
+// ─── MONTE CARLO SIMULATOR ───────────────────────────────────────────────────
+// Convert FIFA rank → pseudo-Elo, simulate remaining group games via Poisson,
+// aggregate over N trials to get per-slot candidate probabilities.
+function rankToElo(rank) {
+  if (!rank || rank > 200) return 1500;
+  return 2080 - (rank - 1) * 9;
+}
+function poissonSample(lambda) {
+  if (lambda <= 0) return 0;
+  const L = Math.exp(-lambda);
+  let k = 0, p = 1;
+  do { k++; p *= Math.random(); } while (p > L);
+  return k - 1;
+}
+function simulateMatch(home, away) {
+  const eH = rankToElo(FIFA[home]);
+  const eA = rankToElo(FIFA[away]);
+  const expH = 1 / (1 + Math.pow(10, (eA - eH) / 400));
+  // Avg WC goals/team ≈ 1.35; widen with expectancy
+  const lH = Math.max(0.25, 1.35 + 1.4 * (expH - 0.5));
+  const lA = Math.max(0.25, 1.35 + 1.4 * ((1 - expH) - 0.5));
+  return { h: poissonSample(lH), a: poissonSample(lA) };
+}
+
+// The 16 R32 slots, expressed as how to derive home/away from per-trial
+// standings + Annex C assignment. Each slot has two sides; each side is either
+// {kind:'winner'|'runnerup', group} or {kind:'third', match}.
+const R32_STRUCTURE = [
+  { num:73, home:{kind:'runnerup',group:'A'}, away:{kind:'runnerup',group:'B'} },
+  { num:74, home:{kind:'winner',  group:'E'}, away:{kind:'third',   match:74}  },
+  { num:75, home:{kind:'winner',  group:'F'}, away:{kind:'runnerup',group:'C'} },
+  { num:76, home:{kind:'winner',  group:'C'}, away:{kind:'runnerup',group:'F'} },
+  { num:77, home:{kind:'winner',  group:'I'}, away:{kind:'third',   match:77}  },
+  { num:78, home:{kind:'runnerup',group:'E'}, away:{kind:'runnerup',group:'I'} },
+  { num:79, home:{kind:'winner',  group:'A'}, away:{kind:'third',   match:79}  },
+  { num:80, home:{kind:'winner',  group:'L'}, away:{kind:'third',   match:80}  },
+  { num:81, home:{kind:'winner',  group:'D'}, away:{kind:'third',   match:81}  },
+  { num:82, home:{kind:'winner',  group:'G'}, away:{kind:'third',   match:82}  },
+  { num:83, home:{kind:'runnerup',group:'K'}, away:{kind:'runnerup',group:'L'} },
+  { num:84, home:{kind:'winner',  group:'H'}, away:{kind:'runnerup',group:'J'} },
+  { num:85, home:{kind:'winner',  group:'B'}, away:{kind:'third',   match:85}  },
+  { num:86, home:{kind:'winner',  group:'J'}, away:{kind:'runnerup',group:'H'} },
+  { num:87, home:{kind:'winner',  group:'K'}, away:{kind:'third',   match:87}  },
+  { num:88, home:{kind:'runnerup',group:'D'}, away:{kind:'runnerup',group:'G'} },
+];
+
+function runSimulation(byKey, trials) {
+  const GRPS = 'ABCDEFGHIJKL'.split('');
+  // counts[matchNum][side='home'|'away'][team] = count
+  const counts = {};
+  R32_STRUCTURE.forEach(s => { counts[s.num] = { home:{}, away:{} }; });
+
+  // Pre-compute which group games still need simulating
+  const allGroupPairs = [];
+  GRPS.forEach(g => {
+    const t = GROUPS[g];
+    for (let i=0;i<t.length;i++) for (let j=i+1;j<t.length;j++) {
+      const key = pkey(t[i], t[j]);
+      const existing = byKey[key];
+      allGroupPairs.push({ key, group:g, home:t[i], away:t[j],
+        existing: existing && existing.score ? existing : null });
+    }
+  });
+
+  for (let trial = 0; trial < trials; trial++) {
+    // Build simulated byKey: keep real results, fill in the rest
+    const simByKey = {};
+    allGroupPairs.forEach(p => {
+      if (p.existing) { simByKey[p.key] = p.existing; }
+      else {
+        const r = simulateMatch(p.home, p.away);
+        simByKey[p.key] = { home:p.home, away:p.away, score: r.h+'-'+r.a, stage:'group' };
+      }
+    });
+
+    // Per-group standings
+    const st = {};
+    GRPS.forEach(g => { st[g] = calcStandings(g, simByKey); });
+
+    // Rank thirds, take top 8
+    const thirds = GRPS.map(g => {
+      const r = st[g][2];
+      return r ? { team:r.team, group:g, pts:r.pts, gd:r.gf-r.ga, gf:r.gf, fifa:FIFA[r.team]||99 } : null;
+    }).filter(Boolean).sort((a,b) =>
+      b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.fifa - b.fifa
+    );
+    const top8 = thirds.slice(0, 8);
+    const top8Groups = top8.map(t => t.group);
+
+    // Annex C assignment
+    const assignment = top8Groups.length === 8 ? assignThirds(top8Groups) : {};
+
+    // Resolve each R32 slot's two sides → team names
+    R32_STRUCTURE.forEach(s => {
+      function resolve(side) {
+        if (side.kind === 'winner')   return st[side.group][0]?.team;
+        if (side.kind === 'runnerup') return st[side.group][1]?.team;
+        if (side.kind === 'third') {
+          const g = assignment[side.match];
+          return g ? thirds.find(t => t.group === g)?.team : null;
+        }
+        return null;
+      }
+      const hT = resolve(s.home), aT = resolve(s.away);
+      if (hT) counts[s.num].home[hT] = (counts[s.num].home[hT] || 0) + 1;
+      if (aT) counts[s.num].away[aT] = (counts[s.num].away[aT] || 0) + 1;
+    });
+  }
+
+  // Convert to top-3 candidate lists with %s
+  const out = {};
+  Object.entries(counts).forEach(([num, sides]) => {
+    out[num] = {
+      home: Object.entries(sides.home).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([team,c]) => ({team, pct:c/trials})),
+      away: Object.entries(sides.away).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([team,c]) => ({team, pct:c/trials})),
+    };
+  });
+  return out;
+}
+
+// Simulation store + async runner
+const $sim = createStore({ status:'idle', data:null, trials:0, elapsedMs:0, key:'' });
+let _simSeq = 0;
+function dataFingerprint(byKey) {
+  // Stable key from played group games — invalidates when scores update
+  return Object.values(byKey||{}).filter(e=>e.stage==='group'&&e.score)
+    .map(e=>e.home+'|'+e.away+'='+e.score).sort().join(',');
+}
+async function ensureSimulation(byKey, trials=5000) {
+  const key = dataFingerprint(byKey);
+  const cur = $sim.get();
+  if (cur.key === key && cur.data && cur.trials === trials) return;
+  const mySeq = ++_simSeq;
+  $sim.set({ status:'running', data:null, trials, elapsedMs:0, key });
+  const t0 = performance.now();
+  // Yield to event loop so the UI can paint the "running" state
+  await new Promise(r => setTimeout(r, 16));
+  if (mySeq !== _simSeq) return;
+  const data = runSimulation(byKey, trials);
+  if (mySeq !== _simSeq) return;
+  $sim.set({ status:'done', data, trials, elapsedMs: Math.round(performance.now()-t0), key });
 }
 
 // ─── BRACKET PROJECTION ───────────────────────────────────────────────────────
@@ -586,7 +732,28 @@ function projectBracket(byKey, mode) {
 // ─── BRACKET VISUAL HELPERS ──────────────────────────────────────────────────
 function projSlotEl(projSlot) {
   if (!projSlot) return span({style:{color:'#374151',fontSize:'11px'}},'TBD');
-  const { team, confidence, alts=[] } = projSlot;
+  const { team, confidence, alts=[], candidates } = projSlot;
+
+  // Simulated mode: render top-3 candidate stack
+  if (candidates && candidates.length) {
+    return div({style:{display:'flex',flexDirection:'column',gap:'2px',width:'100%'}},
+      ...candidates.slice(0,3).map(c => {
+        const pctTxt = c.pct >= 0.995 ? '>99%' : c.pct < 0.005 ? '<1%' : Math.round(c.pct*100)+'%';
+        return div({style:{display:'flex',alignItems:'center',gap:'4px',padding:'2px 6px',borderRadius:'3px',position:'relative',overflow:'hidden'}},
+          div({style:{position:'absolute',left:0,top:0,bottom:0,width:Math.max(2,c.pct*100)+'%',background:'rgba(59,130,246,0.22)',zIndex:0}}),
+          span({style:{fontSize:'12px',flexShrink:0,zIndex:1,position:'relative'}}, FLAG[c.team]||'❓'),
+          span({style:{fontSize:'10px',color:'#e2e8f0',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',zIndex:1,position:'relative'}}, c.team),
+          span({style:{fontSize:'9px',color:'#9ca3af',fontFamily:'monospace',flexShrink:0,zIndex:1,position:'relative'}}, pctTxt)
+        );
+      })
+    );
+  }
+
+  // Unknown = no signal → TBD (don't leak alphabetical fallback)
+  const isUnknown = confidence === 'unknown';
+  const displayTeam = isUnknown ? 'TBD' : team;
+  const displayFlag = isUnknown ? '❓' : (FLAG[team] || '❓');
+
   const color = confidence === 'confirmed' ? '#4ade80'
     : confidence === 'projected'  ? '#93c5fd'
     : confidence === 'contested'  ? '#fbbf24'
@@ -596,12 +763,13 @@ function projSlotEl(projSlot) {
     : confidence === 'contested'  ? 'rgba(251,191,36,0.1)'
     : 'rgba(255,255,255,0.04)';
   const altsEl = div({style:{display:'none',marginTop:'4px'}});
-  const mainEl = div({style:{display:'flex',alignItems:'center',gap:'3px',padding:'3px 6px',borderRadius:'4px',background:bg,border:'1px solid '+color+'44',cursor:alts.length?'pointer':'default',minWidth:0}},
-    span({style:{fontSize:'13px',flexShrink:0}}, FLAG[team]||'❓'),
-    span({style:{fontSize:'10px',fontWeight:600,color:team==='TBD'?'#374151':'#e2e8f0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}, team),
-    alts.length && span({style:{fontSize:'9px',color:color,flexShrink:0,marginLeft:'2px'}}, '+'+alts.length)
+  const showAlts = !isUnknown && alts.length;
+  const mainEl = div({style:{display:'flex',alignItems:'center',gap:'3px',padding:'3px 6px',borderRadius:'4px',background:bg,border:'1px solid '+color+'44',cursor:showAlts?'pointer':'default',minWidth:0}},
+    span({style:{fontSize:'13px',flexShrink:0}}, displayFlag),
+    span({style:{fontSize:'10px',fontWeight:600,color:isUnknown?'#4b5563':(displayTeam==='TBD'?'#374151':'#e2e8f0'),overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}, displayTeam),
+    showAlts && span({style:{fontSize:'9px',color:color,flexShrink:0,marginLeft:'2px'}}, '+'+alts.length)
   );
-  if (alts.length) {
+  if (showAlts) {
     let open = false;
     mainEl.onclick = (e) => { e.stopPropagation(); open=!open; altsEl.style.display=open?'block':'none'; };
     alts.forEach(alt => {
@@ -639,9 +807,42 @@ function pbslot(projHome, projAway, entry, small=false) {
   const homeProj = projHome || (entry ? {team:entry.home,confidence:'confirmed',alts:[]} : {team:'TBD',confidence:'unknown',alts:[]});
   const awayProj = projAway || (entry ? {team:entry.away,confidence:'confirmed',alts:[]} : {team:'TBD',confidence:'unknown',alts:[]});
 
+  // Simulated mode: render top-3 candidate stack with %s and bar fills.
+  // Triggered when proj.candidates is present and there's no confirmed score.
+  const makeStack = (proj, isHomeRow) => {
+    const cands = (proj.candidates || []).slice(0, 3);
+    if (!cands.length) {
+      return div({style:{padding:'6px',fontSize:'10px',color:'#6b7280',
+        borderBottom:isHomeRow?'1px solid rgba(255,255,255,0.07)':'none'}}, 'TBD');
+    }
+    return div({style:{padding:'3px 5px',borderBottom:isHomeRow?'1px solid rgba(255,255,255,0.07)':'none'}},
+      ...cands.map(c => {
+        const pctTxt = c.pct >= 0.995 ? '>99%' : c.pct < 0.005 ? '<1%' : Math.round(c.pct*100)+'%';
+        return div({style:{display:'flex',alignItems:'center',gap:'3px',padding:'1px 0',position:'relative'}},
+          // bar fill behind text
+          div({style:{position:'absolute',left:0,top:1,bottom:1,width:Math.max(2,c.pct*100)+'%',
+            background:'rgba(59,130,246,0.25)',borderRadius:'2px',zIndex:0}}),
+          span({style:{fontSize:'11px',flexShrink:0,zIndex:1,position:'relative'}}, FLAG[c.team]||'❓'),
+          span({style:{fontSize:(small?9:10)+'px',color:'#e2e8f0',flex:1,
+            overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',zIndex:1,position:'relative'}}, c.team),
+          span({style:{fontSize:'9px',color:'#9ca3af',fontFamily:'monospace',flexShrink:0,zIndex:1,position:'relative'}}, pctTxt)
+        );
+      })
+    );
+  };
+
   const makeRow = (proj, won, scoreVal, isHomeRow) => {
+    // If candidates present and no actual score → stack view
+    if (proj.candidates && !scoreVal) {
+      return makeStack(proj, isHomeRow);
+    }
+    // Unknown confidence = no signal yet (group hasn't played) → render as TBD
+    // rather than leaking the alphabetical-tiebreaker team name
+    const isUnknown = proj.confidence === 'unknown';
+    const displayTeam = isUnknown ? 'TBD' : proj.team;
+    const displayFlag = isUnknown ? '❓' : (FLAG[proj.team] || '❓');
     const altsEl = div({style:{display:'none',padding:'2px 4px'}});
-    const hasAlts = proj.alts && proj.alts.length > 0;
+    const hasAlts = !isUnknown && proj.alts && proj.alts.length > 0;
     proj.alts?.forEach(alt => {
       altsEl.appendChild(div({style:{display:'flex',alignItems:'center',gap:'3px',padding:'2px',marginBottom:'1px'}},
         span({style:{fontSize:'10px'}},FLAG[alt.team]||'❓'),
@@ -654,9 +855,9 @@ function pbslot(projHome, projAway, entry, small=false) {
       borderBottom: isHomeRow?'1px solid rgba(255,255,255,0.07)':'none',
       background: won?'rgba(59,130,246,0.15)':'transparent',
       cursor: hasAlts?'pointer':'default'}},
-      span({style:{fontSize:(small?11:13)+'px',flexShrink:0}}, FLAG[proj.team]||'❓'),
-      span({style:{fontSize:(small?9:11)+'px',color:won?'#fff':color||'#9ca3af',fontWeight:won?'700':'400',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
-        proj.team+(color&&!won?' ✦':'')
+      span({style:{fontSize:(small?11:13)+'px',flexShrink:0}}, displayFlag),
+      span({style:{fontSize:(small?9:11)+'px',color:won?'#fff':(isUnknown?'#4b5563':(color||'#9ca3af')),fontWeight:won?'700':'400',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+        displayTeam+(color&&!won&&!isUnknown?' ✦':'')
       ),
       scoreVal!==null && span({style:{fontSize:(small?11:13)+'px',fontWeight:'700',color:isLive?'#f87171':won?'#fff':'#6b7280',minWidth:'14px',textAlign:'right'}}, scoreVal),
       hasAlts && span({style:{fontSize:'9px',color:'#fbbf24',flexShrink:0}},'+'+proj.alts.length)
@@ -679,8 +880,29 @@ function pbslot(projHome, projAway, entry, small=false) {
 }
 
 function buildBracketView() {
-  const data = $data.get()||{};
-  const byKey = data.byKey||{};
+  const data = $data.get();
+  const status = $status.get();
+
+  // Guard: if openfootball didn't load, show a clear panel instead of the
+  // bracket. Without fixture data we can't determine standings, and the
+  // alphabetical fallback in calcStandings produces nonsense pairings.
+  if (!data || !data.byKey || Object.keys(data.byKey).length === 0) {
+    const msg = status === 'error'
+      ? { icon: '⚠️', title: 'Bracket data unavailable',
+          body: 'Could not load fixtures from openfootball. The bracket can\'t be drawn without group standings. Try the refresh button above, or check back in a minute.' }
+      : status === 'loading'
+      ? { icon: '⏳', title: 'Loading bracket data…',
+          body: 'Fetching the latest fixtures from openfootball.' }
+      : { icon: '—', title: 'No bracket data',
+          body: 'Fixture source has no data to display.' };
+    return div({style:{padding:'24px 16px',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.08)',textAlign:'center'}},
+      div({style:{fontSize:'28px',marginBottom:'8px'}}, msg.icon),
+      div({style:{fontSize:'14px',fontWeight:600,color:'#e2e8f0',marginBottom:'6px'}}, msg.title),
+      div({style:{fontSize:'12px',color:'#9ca3af',maxWidth:'440px',margin:'0 auto',lineHeight:'1.5'}}, msg.body)
+    );
+  }
+
+  const byKey = data.byKey;
   const byNum = data.byNum||{};
   const todayISO = $today.get();
   let mode = 'optimistic';
@@ -690,19 +912,34 @@ function buildBracketView() {
   const modeBtns = div({style:{display:'flex',gap:'6px',marginBottom:'8px',flexWrap:'wrap'}});
   const viewBtns = div({style:{display:'flex',gap:'6px',marginBottom:'12px'}});
   const legend = div({style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'12px',padding:'8px 12px',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}});
-  const note = div({style:{padding:'8px 12px',borderRadius:'8px',marginBottom:'12px',background:'rgba(59,130,246,0.05)',border:'1px solid rgba(59,130,246,0.15)',fontSize:'10px',color:'#6b7280',lineHeight:'1.4'}},
-    span({style:{color:'#93c5fd',fontWeight:600}},'Note: '),
-    '3rd-place teams are assigned to slots using a constraint-satisfaction algorithm (no team faces its own group winner). FIFA may differ in specific cases — this is a projection.'
-  );
+  const note = div({style:{padding:'8px 12px',borderRadius:'8px',marginBottom:'12px',background:'rgba(59,130,246,0.05)',border:'1px solid rgba(59,130,246,0.15)',fontSize:'10px',color:'#6b7280',lineHeight:'1.4'}});
+  function updateNote() {
+    note.innerHTML = '';
+    if (mode === 'simulated') {
+      const s = $sim.get();
+      const status = s.status === 'running' ? 'Running 5,000 simulations…'
+        : s.status === 'done' ? `Based on ${s.trials.toLocaleString()} Monte Carlo simulations (${s.elapsedMs}ms). Goals modeled via FIFA-rank Elo + Poisson. 3rd-place slot assignment uses FIFA Annex C constraints.`
+        : 'Click Simulated to run.';
+      note.appendChild(span({style:{color:'#93c5fd',fontWeight:600}},'🎲 Simulated: '));
+      note.appendChild(document.createTextNode(status));
+    } else {
+      note.appendChild(span({style:{color:'#93c5fd',fontWeight:600}},'Note: '));
+      note.appendChild(document.createTextNode('3rd-place slots use FIFA Annex C constraints (each slot only accepts 3rds from 5 specific groups). A valid assignment is chosen — FIFA may differ in specific cases.'));
+    }
+  }
 
   function updateLegend() {
     legend.innerHTML = '';
-    const items = [
-      {color:'#4ade80', label:'Confirmed'},
-      {color:'#93c5fd', label:'Projected'},
-      ...(mode==='probabilistic'?[{color:'#fbbf24',label:'Contested (tap for alts)'}]:[]),
-      {color:'#6b7280', label:'Unknown'},
-    ];
+    let items;
+    if (mode === 'simulated') {
+      items = [{color:'#3b82f6', label:'Bar width = probability'}];
+    } else {
+      items = [
+        {color:'#4ade80', label:'Confirmed'},
+        {color:'#93c5fd', label:'Projected'},
+        {color:'#6b7280', label:'Unknown'},
+      ];
+    }
     items.forEach(({color,label}) => {
       legend.appendChild(div({style:{display:'flex',alignItems:'center',gap:'5px'}},
         div({style:{width:'8px',height:'8px',borderRadius:'50%',background:color}}),
@@ -711,7 +948,7 @@ function buildBracketView() {
     });
   }
 
-  const MODES = [{id:'conservative',l:'🔒 Confirmed'},{id:'optimistic',l:'📊 Projected'},{id:'probabilistic',l:'🔀 Scenarios'}];
+  const MODES = [{id:'conservative',l:'🔒 Confirmed'},{id:'optimistic',l:'📊 Projected'},{id:'simulated',l:'🎲 Simulated'}];
   const VIEWS = [{id:'full',l:'🏆 Full Bracket'},{id:'r32',l:'Round of 32'}];
 
   function updateBtnStyles() {
@@ -742,10 +979,19 @@ function buildBracketView() {
     content.innerHTML = '';
     updateBtnStyles();
     updateLegend();
+    updateNote();
+
+    // Kick off simulation when mode requires it
+    if (mode === 'simulated') {
+      ensureSimulation(byKey, 5000);
+    }
 
     const proj = projectBracket(byKey, mode);
     const r32Map = {};
     proj.r32.forEach(m => { r32Map[m.num] = m; });
+
+    const simState = $sim.get();
+    const simData = (mode === 'simulated' && simState.status === 'done') ? simState.data : null;
 
     function getSlots(num) {
       const pm = r32Map[num];
@@ -758,6 +1004,18 @@ function buildBracketView() {
           entry
         };
       }
+      // Simulated mode: inject candidate stacks (unless one side is already clinched/confirmed)
+      if (simData && simData[num]) {
+        const homeCands = simData[num].home || [];
+        const awayCands = simData[num].away || [];
+        const homeSimSlot = homeCands.length === 1 && homeCands[0].pct >= 0.999
+          ? { team: homeCands[0].team, confidence:'confirmed', alts:[] }
+          : { ...pm.home, candidates: homeCands };
+        const awaySimSlot = awayCands.length === 1 && awayCands[0].pct >= 0.999
+          ? { team: awayCands[0].team, confidence:'confirmed', alts:[] }
+          : { ...pm.away, candidates: awayCands };
+        return { home: homeSimSlot, away: awaySimSlot, entry };
+      }
       return { home: pm.home, away: pm.away, entry };
     }
 
@@ -767,7 +1025,9 @@ function buildBracketView() {
     }
 
     function makeBhalf(nums, small=false) {
-      const sh = small?50:64, gap=10;
+      // Simulated mode stacks 3 candidates per slot — taller rows
+      const sh = mode==='simulated' ? (small?78:90) : (small?50:64);
+      const gap=10;
       const slots = div({style:{display:'flex',flexDirection:'column',gap:gap+'px'}});
       nums.forEach(n => slots.appendChild(makeBslot(n, small)));
       return div({style:{display:'flex',alignItems:'center'}}, slots, connector(nums.length,sh,gap));
@@ -843,8 +1103,18 @@ function buildBracketView() {
     }
   }
 
+  // Re-render when simulation status flips (running → done) so candidate
+  // stacks paint as soon as MC finishes. Self-unsubscribes on next mode change
+  // to avoid leaking subscriptions across view rebuilds.
+  let _simUnsub = null;
+  const wrap = div({}, modeBtns, viewBtns, legend, note, content);
+  _simUnsub = $sim.sub(() => {
+    if (!wrap.isConnected) { if (_simUnsub) _simUnsub(); return; }
+    if (mode === 'simulated') render();
+  });
+
   render();
-  return div({}, modeBtns, viewBtns, legend, note, content);
+  return wrap;
 }
 
 // ─── FEED STATUS BAR ─────────────────────────────────────────────────────────
