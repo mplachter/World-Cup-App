@@ -19,6 +19,12 @@
 <div id="root"></div>
 
 <script>
+// ─── VERSION ─────────────────────────────────────────────────────────────────
+// Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
+// both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
+const APP_VERSION = 'v0.5.0';
+const BUILD_DATE = '2026-06-23';
+
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
 const _subs = new Map();
 let _uid = 0;
@@ -748,8 +754,19 @@ function projSlotEl(projSlot) {
   if (!projSlot) return span({style:{color:'#374151',fontSize:'11px'}},'TBD');
   const { team, confidence, alts=[], candidates } = projSlot;
 
-  // Simulated mode: render top-3 candidate stack
+  // Simulated: candidate stack, collapsing to a single locked row when one
+  // team is dominant (≥90% or all others <10%)
   if (candidates && candidates.length) {
+    const top = candidates[0];
+    const dominant = top.pct >= 0.9 || candidates.slice(1).every(c => c.pct < 0.1);
+    if (dominant) {
+      return div({style:{display:'flex',alignItems:'center',gap:'6px',padding:'5px 8px',borderRadius:'4px',background:'rgba(74,222,128,0.07)',border:'1px solid rgba(74,222,128,0.25)'}},
+        span({style:{fontSize:'14px',flexShrink:0}}, FLAG[top.team]||'❓'),
+        span({style:{fontSize:'11px',fontWeight:600,color:'#e2e8f0',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, top.team),
+        span({style:{fontSize:'8px',color:'#4ade80',fontFamily:'monospace',flexShrink:0,background:'rgba(74,222,128,0.12)',padding:'1px 4px',borderRadius:'3px'}},
+          top.pct >= 0.995 ? 'LOCKED' : Math.round(top.pct*100)+'%')
+      );
+    }
     return div({style:{display:'flex',flexDirection:'column',gap:'2px',width:'100%'}},
       ...candidates.slice(0,3).map(c => {
         const pctTxt = c.pct >= 0.995 ? '>99%' : c.pct < 0.005 ? '<1%' : Math.round(c.pct*100)+'%';
@@ -821,19 +838,33 @@ function pbslot(projHome, projAway, entry, small=false) {
   const homeProj = projHome || (entry ? {team:entry.home,confidence:'confirmed',alts:[]} : {team:'TBD',confidence:'unknown',alts:[]});
   const awayProj = projAway || (entry ? {team:entry.away,confidence:'confirmed',alts:[]} : {team:'TBD',confidence:'unknown',alts:[]});
 
-  // Simulated mode: render top-3 candidate stack with %s and bar fills.
-  // Triggered when proj.candidates is present and there's no confirmed score.
+  // Simulated: render candidate stack with %s and bar fills. When one team
+  // dominates (≥90% OR all others <10%), collapse to a single "locked" row
+  // with no percentages — closer to NYT's "Clinched" presentation.
   const makeStack = (proj, isHomeRow) => {
-    const cands = (proj.candidates || []).slice(0, 3);
-    if (!cands.length) {
+    const raw = (proj.candidates || []).slice(0, 3);
+    if (!raw.length) {
       return div({style:{padding:'6px',fontSize:'10px',color:'#6b7280',
         borderBottom:isHomeRow?'1px solid rgba(255,255,255,0.07)':'none'}}, 'TBD');
     }
+    const top = raw[0];
+    const dominant = top.pct >= 0.9 || raw.slice(1).every(c => c.pct < 0.1);
+    if (dominant) {
+      // Single-row locked render — flag + team name + small lock indicator
+      return div({style:{padding:'8px 8px',borderBottom:isHomeRow?'1px solid rgba(255,255,255,0.07)':'none',
+        display:'flex',alignItems:'center',gap:'6px',background:'rgba(74,222,128,0.05)'}},
+        span({style:{fontSize:(small?14:16)+'px',flexShrink:0}}, FLAG[top.team]||'❓'),
+        span({style:{fontSize:(small?11:12)+'px',color:'#e2e8f0',fontWeight:600,flex:1,
+          overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, top.team),
+        span({style:{fontSize:'8px',color:'#4ade80',fontFamily:'monospace',flexShrink:0,
+          background:'rgba(74,222,128,0.12)',padding:'1px 4px',borderRadius:'3px'}},
+          top.pct >= 0.995 ? 'LOCKED' : Math.round(top.pct*100)+'%')
+      );
+    }
     return div({style:{padding:'3px 5px',borderBottom:isHomeRow?'1px solid rgba(255,255,255,0.07)':'none'}},
-      ...cands.map(c => {
+      ...raw.map(c => {
         const pctTxt = c.pct >= 0.995 ? '>99%' : c.pct < 0.005 ? '<1%' : Math.round(c.pct*100)+'%';
         return div({style:{display:'flex',alignItems:'center',gap:'3px',padding:'1px 0',position:'relative'}},
-          // bar fill behind text
           div({style:{position:'absolute',left:0,top:1,bottom:1,width:Math.max(2,c.pct*100)+'%',
             background:'rgba(59,130,246,0.25)',borderRadius:'2px',zIndex:0}}),
           span({style:{fontSize:'11px',flexShrink:0,zIndex:1,position:'relative'}}, FLAG[c.team]||'❓'),
@@ -919,11 +950,10 @@ function buildBracketView() {
   const byKey = data.byKey;
   const byNum = data.byNum||{};
   const todayISO = $today.get();
-  let mode = 'optimistic';
+  let mode = 'simulated'; // only mode now — Projected removed in favor of always-Monte-Carlo
   let view = 'full';
 
   const content = div({});
-  const modeBtns = div({style:{display:'flex',gap:'6px',marginBottom:'8px',flexWrap:'wrap'}});
   const viewBtns = div({style:{display:'flex',gap:'6px',marginBottom:'12px'}});
   const legend = div({style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'12px',padding:'8px 12px',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}});
   const note = div({style:{padding:'8px 12px',borderRadius:'8px',marginBottom:'12px',background:'rgba(59,130,246,0.05)',border:'1px solid rgba(59,130,246,0.15)',fontSize:'10px',color:'#6b7280',lineHeight:'1.4'}});
@@ -942,7 +972,6 @@ function buildBracketView() {
 
   function updateSimPanel() {
     simPanel.innerHTML = '';
-    if (mode !== 'simulated') { simPanel.style.display = 'none'; return; }
     simPanel.style.display = 'block';
     const s = $sim.get();
     const curKey = dataFingerprint(byKey);
@@ -959,20 +988,20 @@ function buildBracketView() {
       ));
     } else if (hasFresh) {
       left.appendChild(div({style:{fontSize:'12px',fontWeight:600,color:'#4ade80',marginBottom:'2px'}}, `✓ ${s.trials.toLocaleString()} simulations · ${s.elapsedMs}ms`));
-      left.appendChild(div({style:{fontSize:'10px',color:'#6b7280'}}, `Run ${fmtAge(s.savedAt)} · cached locally`));
+      left.appendChild(div({style:{fontSize:'10px',color:'#6b7280'}}, `Run ${fmtAge(s.savedAt)} · auto-refreshes when scores update`));
     } else if (hasStale) {
-      left.appendChild(div({style:{fontSize:'12px',fontWeight:600,color:'#fbbf24',marginBottom:'2px'}}, `⚠ Stale results from ${fmtAge(s.savedAt)}`));
-      left.appendChild(div({style:{fontSize:'10px',color:'#9ca3af'}}, 'Group scores have updated since last run — re-run to refresh'));
+      left.appendChild(div({style:{fontSize:'12px',fontWeight:600,color:'#fbbf24',marginBottom:'2px'}}, `⚠ Recomputing — scores have updated`));
+      left.appendChild(div({style:{fontSize:'10px',color:'#9ca3af'}}, `Previous run ${fmtAge(s.savedAt)}`));
     } else {
-      left.appendChild(div({style:{fontSize:'12px',fontWeight:600,color:'#e2e8f0',marginBottom:'2px'}}, 'No simulation yet'));
-      left.appendChild(div({style:{fontSize:'10px',color:'#9ca3af'}}, 'Click Run to compute bracket probabilities (~1–2 seconds)'));
+      left.appendChild(div({style:{fontSize:'12px',fontWeight:600,color:'#e2e8f0',marginBottom:'2px'}}, 'Preparing simulation…'));
+      left.appendChild(div({style:{fontSize:'10px',color:'#9ca3af'}}, 'Computing bracket probabilities'));
     }
 
     const right = isRunning
       ? btn({style:{padding:'7px 14px',borderRadius:'6px',background:'rgba(239,68,68,0.15)',border:'1px solid rgba(239,68,68,0.4)',color:'#f87171',fontSize:'12px',fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0},
           onclick:cancelSimulation}, 'Cancel')
       : btn({style:{padding:'7px 14px',borderRadius:'6px',background:'rgba(59,130,246,0.2)',border:'1px solid rgba(59,130,246,0.5)',color:'#93c5fd',fontSize:'12px',fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0},
-          onclick:()=>startSimulation(byKey, SIM_TRIALS_DEFAULT)}, hasFresh || hasStale ? '↻ Re-run' : '▶ Run Simulation');
+          onclick:()=>startSimulation(byKey, SIM_TRIALS_DEFAULT)}, '↻ Re-run');
 
     simPanel.appendChild(div({style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 14px',borderRadius:'8px',background:'rgba(255,255,255,0.04)',border:'1px solid '+(isRunning?'rgba(59,130,246,0.3)':hasStale?'rgba(251,191,36,0.25)':'rgba(255,255,255,0.08)')}},
       left, right));
@@ -980,27 +1009,16 @@ function buildBracketView() {
 
   function updateNote() {
     note.innerHTML = '';
-    if (mode === 'simulated') {
-      note.appendChild(span({style:{color:'#93c5fd',fontWeight:600}},'🎲 How this works: '));
-      note.appendChild(document.createTextNode('Each remaining group game is simulated via FIFA-rank Elo + Poisson goal sampling. Across thousands of trials, we record how often each team lands in each Round of 32 slot. Bars show those probabilities.'));
-    } else {
-      note.appendChild(span({style:{color:'#93c5fd',fontWeight:600}},'Note: '));
-      note.appendChild(document.createTextNode('Projected mode uses current group standings — whichever team is currently leading appears as winner. 3rd-place slots respect FIFA Annex C constraints. For probabilistic forecasts, use Simulated.'));
-    }
+    note.appendChild(span({style:{color:'#93c5fd',fontWeight:600}},'🎲 How this works: '));
+    note.appendChild(document.createTextNode('Each remaining group game is simulated via FIFA-rank Elo + Poisson goal sampling. Across thousands of trials, we record how often each team lands in each Round of 32 slot. Bars show those probabilities. Auto-refreshes when scores update.'));
   }
 
   function updateLegend() {
     legend.innerHTML = '';
-    let items;
-    if (mode === 'simulated') {
-      items = [{color:'#3b82f6', label:'Bar width = probability across simulations'}];
-    } else {
-      items = [
-        {color:'#4ade80', label:'Confirmed (group complete)'},
-        {color:'#93c5fd', label:'Projected (current leader)'},
-        {color:'#6b7280', label:'Unknown (group not started)'},
-      ];
-    }
+    const items = [
+      {color:'#3b82f6', label:'Bar width = probability across simulations'},
+      {color:'#4ade80', label:'Locked (only one possibility)'},
+    ];
     items.forEach(({color,label}) => {
       legend.appendChild(div({style:{display:'flex',alignItems:'center',gap:'5px'}},
         div({style:{width:'8px',height:'8px',borderRadius:'50%',background:color}}),
@@ -1009,18 +1027,9 @@ function buildBracketView() {
     });
   }
 
-  // Confirmed mode removed — it was rarely meaningful and the "all groups
-  // mathematically locked" gate is already part of Projected's confidence colors.
-  const MODES = [{id:'optimistic',l:'📊 Projected'},{id:'simulated',l:'🎲 Simulated'}];
   const VIEWS = [{id:'full',l:'🏆 Full Bracket'},{id:'r32',l:'Round of 32'}];
 
   function updateBtnStyles() {
-    modeBtns.querySelectorAll('button').forEach(b => {
-      const active = b.dataset.m === mode;
-      b.style.background = active?'rgba(59,130,246,0.3)':'rgba(255,255,255,0.05)';
-      b.style.border = active?'1px solid rgba(59,130,246,0.6)':'1px solid rgba(255,255,255,0.1)';
-      b.style.color = active?'#93c5fd':'#94a3b8';
-    });
     viewBtns.querySelectorAll('button').forEach(b => {
       const active = b.dataset.v === view;
       b.style.background = active?'rgba(59,130,246,0.3)':'rgba(255,255,255,0.05)';
@@ -1029,10 +1038,6 @@ function buildBracketView() {
     });
   }
 
-  MODES.forEach(m => {
-    modeBtns.appendChild(btn({'data-m':m.id, style:{padding:'5px 10px',borderRadius:'6px',fontSize:'11px',fontWeight:500,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit'},
-      onclick:function(){ mode=m.id; render(); }}, m.l));
-  });
   VIEWS.forEach(v => {
     viewBtns.appendChild(btn({'data-v':v.id, style:{padding:'5px 10px',borderRadius:'6px',fontSize:'11px',fontWeight:500,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit'},
       onclick:function(){ view=v.id; render(); }}, v.l));
@@ -1055,8 +1060,7 @@ function buildBracketView() {
 
     const simState = $sim.get();
     const curKey = dataFingerprint(byKey);
-    // Use sim data only if it matches the current fixture state (no stale data)
-    const simData = (mode === 'simulated' && simState.status === 'done' && simState.key === curKey) ? simState.data : null;
+    const simData = (simState.status === 'done' && simState.key === curKey) ? simState.data : null;
 
     function getSlots(num) {
       const pm = r32Map[num];
@@ -1069,19 +1073,22 @@ function buildBracketView() {
           entry
         };
       }
-      // Simulated mode: inject candidate stacks (unless one side is already clinched/confirmed)
       if (simData && simData[num]) {
+        // Sim data present — pass candidates to the slot renderer
         const homeCands = simData[num].home || [];
         const awayCands = simData[num].away || [];
-        const homeSimSlot = homeCands.length === 1 && homeCands[0].pct >= 0.999
-          ? { team: homeCands[0].team, confidence:'confirmed', alts:[] }
-          : { ...pm.home, candidates: homeCands };
-        const awaySimSlot = awayCands.length === 1 && awayCands[0].pct >= 0.999
-          ? { team: awayCands[0].team, confidence:'confirmed', alts:[] }
-          : { ...pm.away, candidates: awayCands };
-        return { home: homeSimSlot, away: awaySimSlot, entry };
+        return {
+          home: { team:'TBD', confidence:'unknown', alts:[], candidates: homeCands },
+          away: { team:'TBD', confidence:'unknown', alts:[], candidates: awayCands },
+          entry
+        };
       }
-      return { home: pm.home, away: pm.away, entry };
+      // No sim data yet (still running, or about to start) — show TBD
+      return {
+        home: {team:'TBD', confidence:'unknown', alts:[]},
+        away: {team:'TBD', confidence:'unknown', alts:[]},
+        entry
+      };
     }
 
     function makeBslot(num, small=false) {
@@ -1090,9 +1097,9 @@ function buildBracketView() {
     }
 
     function makeBhalf(nums, small=false) {
-      // Simulated mode stacks 3 candidates per slot — taller rows
-      const sh = mode==='simulated' ? (small?78:90) : (small?50:64);
-      const gap=10;
+      // Always taller rows now (we always render simulated candidate stacks)
+      const sh = small ? 78 : 90;
+      const gap = 10;
       const slots = div({style:{display:'flex',flexDirection:'column',gap:gap+'px'}});
       nums.forEach(n => slots.appendChild(makeBslot(n, small)));
       return div({style:{display:'flex',alignItems:'center'}}, slots, connector(nums.length,sh,gap));
@@ -1168,28 +1175,52 @@ function buildBracketView() {
     }
   }
 
-  // Re-render when simulation status flips (running → done) so candidate
-  // stacks paint as soon as MC finishes. Self-unsubscribes on next mode change
-  // to avoid leaking subscriptions across view rebuilds.
+  // Re-render the bracket when the simulator finishes a chunk so progress
+  // updates, and full-re-render when sim transitions to "done" so candidate
+  // stacks appear. Self-unsubscribes when this view leaves the DOM.
   let _simUnsub = null;
-  const wrap = div({}, modeBtns, viewBtns, legend, note, simPanel, content);
+  let _dataUnsub = null;
+  const wrap = div({}, viewBtns, legend, note, simPanel, content);
   let _lastSimStatus = $sim.get().status;
   _simUnsub = $sim.sub(() => {
-    if (!wrap.isConnected) { if (_simUnsub) _simUnsub(); return; }
-    if (mode !== 'simulated') return;
+    if (!wrap.isConnected) {
+      if (_simUnsub) _simUnsub();
+      if (_dataUnsub) _dataUnsub();
+      return;
+    }
     const s = $sim.get();
-    // While running, only refresh the progress panel (cheap). Avoid touching
-    // the bracket DOM until the sim finishes — that's when candidates appear.
     if (s.status === 'running') {
       updateSimPanel();
     } else if (s.status !== _lastSimStatus || s.status === 'done') {
-      // Status flipped (running → done, or fresh data) → full re-render
       render();
     }
     _lastSimStatus = s.status;
   });
 
+  // Auto-refresh: when openfootball serves new scores, fingerprint changes →
+  // kick off a re-sim. Idempotent: skips if a sim is already running or if the
+  // cached sim already matches the new fingerprint.
+  _dataUnsub = $data.sub(() => {
+    if (!wrap.isConnected) {
+      if (_dataUnsub) _dataUnsub();
+      if (_simUnsub) _simUnsub();
+      return;
+    }
+    maybeAutoStartSim();
+  });
+
+  function maybeAutoStartSim() {
+    const d = $data.get();
+    if (!d || !d.byKey) return;
+    const fp = dataFingerprint(d.byKey);
+    const s = $sim.get();
+    if (s.status === 'running') return;     // already running
+    if (s.key === fp && s.data) return;     // cache hit
+    startSimulation(d.byKey, SIM_TRIALS_DEFAULT);
+  }
+
   render();
+  maybeAutoStartSim();
   return wrap;
 }
 
@@ -1427,7 +1458,7 @@ function buildApp(){
 
   renderContent();
 
-  return div({style:{background:'linear-gradient(160deg,#0a0f1e 0%,#0f172a 60%,#0a1628 100%)',minHeight:'100vh'}},
+  return div({style:{background:'linear-gradient(160deg,#0a0f1e 0%,#0f172a 60%,#0a1628 100%)',minHeight:'100vh',display:'flex',flexDirection:'column'}},
     div({style:{borderBottom:'1px solid rgba(255,255,255,0.07)',background:'rgba(255,255,255,0.02)',padding:'16px 16px 0'}},
       div({style:{maxWidth:'768px',margin:'0 auto'}},
         div({style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'10px'}},
@@ -1441,7 +1472,12 @@ function buildApp(){
         tabButtons
       )
     ),
-    contentArea
+    div({style:{flex:1}}, contentArea),
+    div({style:{padding:'16px',borderTop:'1px solid rgba(255,255,255,0.05)',background:'rgba(0,0,0,0.2)',textAlign:'center',marginTop:'24px'}},
+      div({style:{maxWidth:'768px',margin:'0 auto',fontSize:'10px',color:'#374151',fontFamily:'monospace'}},
+        APP_VERSION + ' · built ' + BUILD_DATE
+      )
+    )
   );
 }
 
