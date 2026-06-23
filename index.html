@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.6.0';
+const APP_VERSION = 'v0.6.1';
 const BUILD_DATE = '2026-06-23';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -651,6 +651,27 @@ async function startSimulation(byKey, trials) {
       home: Object.entries(sides.home).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([team,c]) => ({team, pct:c/trials})),
       away: Object.entries(sides.away).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([team,c]) => ({team, pct:c/trials})),
     };
+  });
+
+  // Post-pass: when a team is essentially locked into one slot (e.g. USA at
+  // 99% in M81), they shouldn't also appear as low-% noise in other slots
+  // (USA at 1% in M88 home as Group D runner-up). Identify locked teams
+  // using the same dominance rule the renderer uses, then strip them from
+  // all other slots' candidate lists.
+  function isDominant(cands) {
+    if (!cands || !cands.length) return false;
+    return cands[0].pct >= 0.9 || cands.slice(1).every(c => c.pct < 0.1);
+  }
+  const lockedTeams = new Set();
+  Object.values(out).forEach(sides => {
+    if (isDominant(sides.home)) lockedTeams.add(sides.home[0].team);
+    if (isDominant(sides.away)) lockedTeams.add(sides.away[0].team);
+  });
+  Object.values(out).forEach(sides => {
+    ['home', 'away'].forEach(side => {
+      if (isDominant(sides[side])) return; // keep the slot where they're locked
+      sides[side] = sides[side].filter(c => !lockedTeams.has(c.team));
+    });
   });
 
   const elapsedMs = Math.round(performance.now() - t0);
