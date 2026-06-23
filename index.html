@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.5.0';
+const APP_VERSION = 'v0.6.0';
 const BUILD_DATE = '2026-06-23';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -1121,7 +1121,10 @@ function buildBracketView() {
     } else {
       content.appendChild(div({style:{fontSize:'11px',color:'#4b5563',marginBottom:'8px'}},'← Scroll to see full bracket'));
       const scrollWrap = div({style:{overflowX:'auto',paddingBottom:'16px'}});
-      const row = div({style:{display:'flex',alignItems:'center',minWidth:'980px',padding:'4px 0'}});
+      // justifyContent:center makes the bracket sit in the middle of the wider
+      // container on desktop. minWidth:980 ensures it still scrolls horizontally
+      // on narrow (mobile) screens.
+      const row = div({style:{display:'flex',alignItems:'center',justifyContent:'center',minWidth:'980px',padding:'4px 0'}});
 
       const BL = {r32:[74,76,73,75,78,77,81,82], r16:[89,90,91,92], qf:[97,99]};
       const BR = {r32:[83,84,85,87,80,86,88,79], r16:[93,94,95,96], qf:[98,100]};
@@ -1419,17 +1422,29 @@ function buildRankingsView(){
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 function buildApp(){
   const TABS=[{id:"schedule",l:"📅 Schedule"},{id:"groups",l:"🔡 Groups"},{id:"bracket",l:"🏆 Bracket"},{id:"rankings",l:"⚽ Rankings"}];
-  const contentArea=div({style:{maxWidth:'768px',margin:'0 auto',padding:'16px'}});
+  // Outer container: up to 1400px so the bracket can spread out on desktop.
+  // Each tab decides its own inner max-width — text-heavy tabs stay narrow.
+  const contentArea=div({style:{maxWidth:'1400px',margin:'0 auto',padding:'16px'}});
   const tabButtons=div({style:{display:'flex',gap:'2px',overflowX:'auto'}});
+
+  // Per-tab inner max-width. Bracket gets the full 1400px so the visual bracket
+  // doesn't horizontally scroll on desktops. Other tabs cap at 768px because
+  // lists of text/cards look weird stretched wider than ~80 chars per line.
+  const INNER_MAX = { bracket: '100%', schedule: '768px', groups: '768px', rankings: '768px' };
 
   function renderContent(){
     contentArea.innerHTML='';
-    contentArea.appendChild(buildFeedStatus());
-    const t=$tab.get();
-    if(t==='schedule')contentArea.appendChild(buildScheduleView());
-    else if(t==='groups')contentArea.appendChild(buildGroupsView());
-    else if(t==='bracket')contentArea.appendChild(buildBracketView());
-    else if(t==='rankings')contentArea.appendChild(buildRankingsView());
+    const t = $tab.get();
+    // Single inner wrapper holds the status bar + the current tab's view; both
+    // share the same max-width. Reachable as contentArea.firstChild for the
+    // $status / $espnStatus partial-update subs.
+    const inner = div({style:{maxWidth: INNER_MAX[t] || '768px', margin:'0 auto'}});
+    inner.appendChild(buildFeedStatus());
+    if(t==='schedule')inner.appendChild(buildScheduleView());
+    else if(t==='groups')inner.appendChild(buildGroupsView());
+    else if(t==='bracket')inner.appendChild(buildBracketView());
+    else if(t==='rankings')inner.appendChild(buildRankingsView());
+    contentArea.appendChild(inner);
     tabButtons.querySelectorAll('button').forEach(b=>{
       const active=b.dataset.tab===$tab.get();
       b.style.borderBottom=active?'2px solid #3b82f6':'2px solid transparent';
@@ -1445,12 +1460,16 @@ function buildApp(){
   $data.sub(renderContent);
   $espn.sub(renderContent);
   $squads.sub(renderContent);
-  $status.sub(()=>{
-    const fs=contentArea.firstChild;if(fs){contentArea.replaceChild(buildFeedStatus(),fs);}
-  });
-  $espnStatus.sub(()=>{
-    const fs=contentArea.firstChild;if(fs){contentArea.replaceChild(buildFeedStatus(),fs);}
-  });
+  // Lightweight status-bar refresh — reach into the inner wrapper, replace
+  // only the first child (the status bar) so we don't rebuild the whole view.
+  function refreshStatusBar() {
+    const inner = contentArea.firstChild;
+    if (!inner) return;
+    const fs = inner.firstChild;
+    if (fs) inner.replaceChild(buildFeedStatus(), fs);
+  }
+  $status.sub(refreshStatusBar);
+  $espnStatus.sub(refreshStatusBar);
 
   const todayBtn=btn({id:'today-btn',style:{flexShrink:0,display:'none',alignItems:'center',gap:'6px',padding:'6px 12px',borderRadius:'8px',fontSize:'12px',fontWeight:'600',background:'rgba(217,119,6,0.2)',border:'1px solid rgba(217,119,6,0.55)',color:'#fbbf24'},onclick:function(){$tab.set('schedule');renderContent();setTimeout(()=>{const el=document.getElementById('today-anchor');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},80);}});
   function updateTodayBtn(){const n=($data.get()?$data.get().all:[]).filter(e=>e.date===$today.get()).length;todayBtn.textContent='';todayBtn.appendChild(span({},'★ '+n+' Today'));todayBtn.style.display=n>0?'flex':'none';}
@@ -1460,7 +1479,7 @@ function buildApp(){
 
   return div({style:{background:'linear-gradient(160deg,#0a0f1e 0%,#0f172a 60%,#0a1628 100%)',minHeight:'100vh',display:'flex',flexDirection:'column'}},
     div({style:{borderBottom:'1px solid rgba(255,255,255,0.07)',background:'rgba(255,255,255,0.02)',padding:'16px 16px 0'}},
-      div({style:{maxWidth:'768px',margin:'0 auto'}},
+      div({style:{maxWidth:'1400px',margin:'0 auto'}},
         div({style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'10px'}},
           span({style:{fontSize:'28px'}},'⚽'),
           div({style:{flex:1,minWidth:0}},
@@ -1474,7 +1493,7 @@ function buildApp(){
     ),
     div({style:{flex:1}}, contentArea),
     div({style:{padding:'16px',borderTop:'1px solid rgba(255,255,255,0.05)',background:'rgba(0,0,0,0.2)',textAlign:'center',marginTop:'24px'}},
-      div({style:{maxWidth:'768px',margin:'0 auto',fontSize:'10px',color:'#374151',fontFamily:'monospace'}},
+      div({style:{maxWidth:'1400px',margin:'0 auto',fontSize:'10px',color:'#374151',fontFamily:'monospace'}},
         APP_VERSION + ' · built ' + BUILD_DATE
       )
     )
