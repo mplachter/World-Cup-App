@@ -442,20 +442,18 @@ const ANNEX_C_SLOTS = [
   { match: 87, winnerGroup: 'K', allowed: ['D','E','I','J','L'] },
 ];
 
-function assignThirds(thirdGroups) {
+function assignThirds(thirdGroups, randomize) {
   if (thirdGroups.length !== 8) return {};
-  // Per trial, shuffle valid options so we don't always pick the same canonical
-  // assignment. Multiple slot assignments may be valid for the same set of 8
-  // qualifying groups; FIFA's Annex C picks one specific arrangement we don't
-  // have access to. Randomizing spreads probability mass across all valid
-  // arrangements, which is closer to "uniform over uncertainty" than always
-  // picking the first solution.
+  // Deterministic by default — important so Projected mode is stable between
+  // renders. Simulator passes randomize=true to spread probability mass across
+  // all valid arrangements (since we don't have FIFA's 495-row canonical table).
   const slots = ANNEX_C_SLOTS.map(s => {
     const valid = thirdGroups.filter(g => s.allowed.includes(g));
-    // Fisher-Yates in place
-    for (let i = valid.length - 1; i > 0; i--) {
-      const j = (Math.random() * (i+1)) | 0;
-      [valid[i], valid[j]] = [valid[j], valid[i]];
+    if (randomize) {
+      for (let i = valid.length - 1; i > 0; i--) {
+        const j = (Math.random() * (i+1)) | 0;
+        [valid[i], valid[j]] = [valid[j], valid[i]];
+      }
     }
     return { ...s, valid };
   }).sort((a,b) => a.valid.length - b.valid.length);
@@ -523,70 +521,124 @@ const R32_STRUCTURE = [
   { num:88, home:{kind:'runnerup',group:'D'}, away:{kind:'runnerup',group:'G'} },
 ];
 
-function runSimulation(byKey, trials) {
+// ─── SIMULATION STATE + CHUNKED RUNNER + CACHE ───────────────────────────────
+// Key design decisions, after debugging the runaway-render issue:
+//  • Sim is ONLY triggered by an explicit button click — never from render().
+//    (Previously, render → ensureSimulation → $sim.set('running') synchronously
+//    fired the sub, which called render() recursively. Each level of recursion
+//    appended a full bracket to `content` AFTER the cascade unwound, producing
+//    stacked brackets.)
+//  • Sim runs in 250-trial chunks with `await setTimeout(0)` between them.
+//    Browser stays responsive; progress UI updates live.
+//  • Result is persisted to localStorage keyed by the played-games fingerprint.
+//    Survives reloads. When new scores invalidate the fingerprint, the cached
+//    sim is shown stale (clearly labeled) until the user clicks Re-run.
+
+const $sim = createStore({ status:'idle', data:null, trials:0, completed:0, elapsedMs:0, key:'', cachedKey:'' });
+const SIM_TRIALS_DEFAULT = 5000;
+const SIM_CHUNK = 250;
+const SIM_LS_KEY = 'wc2026:sim:v2';
+let _simCancelled = false;
+
+function loadCachedSim() {
+  try {
+    const raw = localStorage.getItem(SIM_LS_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (obj && obj.data && obj.key) return obj;
+  } catch (e) {}
+  return null;
+}
+function saveCachedSim(payload) {
+  try { localStorage.setItem(SIM_LS_KEY, JSON.stringify(payload)); } catch (e) {}
+}
+
+function dataFingerprint(byKey) {
+  return Object.values(byKey||{}).filter(e=>e.stage==='group'&&e.score)
+    .map(e=>e.home+'|'+e.away+'='+e.score).sort().join(',');
+}
+
+// Hydrate $sim from localStorage on startup
+(function hydrateSim() {
+  const cached = loadCachedSim();
+  if (cached) {
+    $sim.set({ status:'done', data:cached.data, trials:cached.trials||SIM_TRIALS_DEFAULT,
+      completed:cached.trials||SIM_TRIALS_DEFAULT, elapsedMs:cached.elapsedMs||0,
+      key:cached.key, cachedKey:cached.key, savedAt:cached.savedAt||0 });
+  }
+})();
+
+function cancelSimulation() { _simCancelled = true; }
+
+async function startSimulation(byKey, trials) {
+  trials = trials || SIM_TRIALS_DEFAULT;
+  const key = dataFingerprint(byKey);
+  _simCancelled = false;
+  $sim.set({ status:'running', data:null, trials, completed:0, elapsedMs:0, key, cachedKey:$sim.get().cachedKey });
+
+  const t0 = performance.now();
   const GRPS = 'ABCDEFGHIJKL'.split('');
-  // counts[matchNum][side='home'|'away'][team] = count
   const counts = {};
   R32_STRUCTURE.forEach(s => { counts[s.num] = { home:{}, away:{} }; });
 
-  // Pre-compute which group games still need simulating
   const allGroupPairs = [];
   GRPS.forEach(g => {
     const t = GROUPS[g];
     for (let i=0;i<t.length;i++) for (let j=i+1;j<t.length;j++) {
-      const key = pkey(t[i], t[j]);
-      const existing = byKey[key];
-      allGroupPairs.push({ key, group:g, home:t[i], away:t[j],
+      const pk = pkey(t[i], t[j]);
+      const existing = byKey[pk];
+      allGroupPairs.push({ key:pk, group:g, home:t[i], away:t[j],
         existing: existing && existing.score ? existing : null });
     }
   });
 
   for (let trial = 0; trial < trials; trial++) {
-    // Build simulated byKey: keep real results, fill in the rest
     const simByKey = {};
-    allGroupPairs.forEach(p => {
+    for (const p of allGroupPairs) {
       if (p.existing) { simByKey[p.key] = p.existing; }
       else {
         const r = simulateMatch(p.home, p.away);
         simByKey[p.key] = { home:p.home, away:p.away, score: r.h+'-'+r.a, stage:'group' };
       }
-    });
-
-    // Per-group standings
+    }
     const st = {};
     GRPS.forEach(g => { st[g] = calcStandings(g, simByKey); });
-
-    // Rank thirds, take top 8
     const thirds = GRPS.map(g => {
       const r = st[g][2];
       return r ? { team:r.team, group:g, pts:r.pts, gd:r.gf-r.ga, gf:r.gf, fifa:FIFA[r.team]||99 } : null;
     }).filter(Boolean).sort((a,b) =>
       b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.fifa - b.fifa
     );
-    const top8 = thirds.slice(0, 8);
-    const top8Groups = top8.map(t => t.group);
+    const top8Groups = thirds.slice(0,8).map(t => t.group);
+    const assignment = top8Groups.length === 8 ? assignThirds(top8Groups, true) : {};
 
-    // Annex C assignment
-    const assignment = top8Groups.length === 8 ? assignThirds(top8Groups) : {};
-
-    // Resolve each R32 slot's two sides → team names
-    R32_STRUCTURE.forEach(s => {
-      function resolve(side) {
-        if (side.kind === 'winner')   return st[side.group][0]?.team;
-        if (side.kind === 'runnerup') return st[side.group][1]?.team;
-        if (side.kind === 'third') {
-          const g = assignment[side.match];
+    for (const s of R32_STRUCTURE) {
+      const side = (sideSpec) => {
+        if (sideSpec.kind === 'winner')   return st[sideSpec.group][0]?.team;
+        if (sideSpec.kind === 'runnerup') return st[sideSpec.group][1]?.team;
+        if (sideSpec.kind === 'third') {
+          const g = assignment[sideSpec.match];
           return g ? thirds.find(t => t.group === g)?.team : null;
         }
-        return null;
-      }
-      const hT = resolve(s.home), aT = resolve(s.away);
+      };
+      const hT = side(s.home), aT = side(s.away);
       if (hT) counts[s.num].home[hT] = (counts[s.num].home[hT] || 0) + 1;
       if (aT) counts[s.num].away[aT] = (counts[s.num].away[aT] || 0) + 1;
-    });
+    }
+
+    // Yield + report progress every CHUNK trials
+    if ((trial + 1) % SIM_CHUNK === 0 || trial === trials - 1) {
+      const cur = $sim.get();
+      $sim.set({ ...cur, completed: trial + 1, elapsedMs: Math.round(performance.now() - t0) });
+      await new Promise(r => setTimeout(r, 0));
+      if (_simCancelled) {
+        $sim.set({ status:'idle', data:null, trials:0, completed:0, elapsedMs:0,
+          key:'', cachedKey: $sim.get().cachedKey });
+        return;
+      }
+    }
   }
 
-  // Convert to top-3 candidate lists with %s
   const out = {};
   Object.entries(counts).forEach(([num, sides]) => {
     out[num] = {
@@ -594,30 +646,11 @@ function runSimulation(byKey, trials) {
       away: Object.entries(sides.away).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([team,c]) => ({team, pct:c/trials})),
     };
   });
-  return out;
-}
 
-// Simulation store + async runner
-const $sim = createStore({ status:'idle', data:null, trials:0, elapsedMs:0, key:'' });
-let _simSeq = 0;
-function dataFingerprint(byKey) {
-  // Stable key from played group games — invalidates when scores update
-  return Object.values(byKey||{}).filter(e=>e.stage==='group'&&e.score)
-    .map(e=>e.home+'|'+e.away+'='+e.score).sort().join(',');
-}
-async function ensureSimulation(byKey, trials=5000) {
-  const key = dataFingerprint(byKey);
-  const cur = $sim.get();
-  if (cur.key === key && cur.data && cur.trials === trials) return;
-  const mySeq = ++_simSeq;
-  $sim.set({ status:'running', data:null, trials, elapsedMs:0, key });
-  const t0 = performance.now();
-  // Yield to event loop so the UI can paint the "running" state
-  await new Promise(r => setTimeout(r, 16));
-  if (mySeq !== _simSeq) return;
-  const data = runSimulation(byKey, trials);
-  if (mySeq !== _simSeq) return;
-  $sim.set({ status:'done', data, trials, elapsedMs: Math.round(performance.now()-t0), key });
+  const elapsedMs = Math.round(performance.now() - t0);
+  const savedAt = Date.now();
+  saveCachedSim({ data: out, key, trials, elapsedMs, savedAt });
+  $sim.set({ status:'done', data:out, trials, completed:trials, elapsedMs, key, cachedKey:key, savedAt });
 }
 
 // ─── BRACKET PROJECTION ───────────────────────────────────────────────────────
@@ -635,13 +668,12 @@ function projectBracket(byKey, mode) {
     if (rows.length >= 2) {
       const leader = rows[pos];
       if (!leader) return 'unknown';
-      if (mode === 'conservative') return gamesPlayed === totalGames ? 'confirmed' : 'unknown';
-      if (mode === 'optimistic') return leader.mp > 0 ? 'projected' : 'unknown';
+      // Optimistic / projected: current leader, color by how strong the lead is
       const next = rows[pos + 1];
       if (!next) return 'projected';
       const ptDiff = leader.pts - next.pts;
       const gamesLeft = totalGames - gamesPlayed;
-      if (ptDiff > gamesLeft * 3) return 'confirmed';
+      if (ptDiff > gamesLeft * 3) return 'confirmed';   // mathematically locked
       if (ptDiff >= 3) return 'projected';
       return 'contested';
     }
@@ -670,36 +702,18 @@ function projectBracket(byKey, mode) {
   const groupComplete = GRPS.every(g => standings[g].every(r => r.mp === 3));
   const thirdsConfidence = groupComplete ? 'projected' : (thirds.length >= 8 ? 'projected' : 'unknown');
 
-  // Algorithmic assignment of thirds → slots
-  const thirdAssignment = top8Groups.length === 8 ? assignThirds(top8Groups) : {};
-
-  // Probabilistic mode: also compute the assignment for "9th place team
-  // swapped in" if 8th and 9th are very close — surface as alts.
-  let altAssignment = null;
-  if (mode === 'probabilistic' && thirds.length >= 9) {
-    const t8 = thirds[7], t9 = thirds[8];
-    if (t8 && t9 && Math.abs(t8.pts - t9.pts) <= 1) {
-      const altGroups = [...top8Groups.slice(0,7), t9.group];
-      altAssignment = { groups: altGroups, swapped: t9.team, swappedOut: t8.team, map: assignThirds(altGroups) };
-    }
-  }
+  // Deterministic Annex C assignment for the displayed Projected bracket
+  // (randomize=false so the same standings always produce the same bracket).
+  const thirdAssignment = top8Groups.length === 8 ? assignThirds(top8Groups, false) : {};
 
   function thirdSlotFor(matchNum) {
     const assignedGroup = thirdAssignment[matchNum];
     if (!assignedGroup) return { team:'3rd', confidence:'unknown', alts:[] };
     const thirdTeam = thirds.find(t => t.group === assignedGroup);
-    const alts = [];
-    if (altAssignment) {
-      const altGroup = altAssignment.map[matchNum];
-      if (altGroup && altGroup !== assignedGroup) {
-        const altTeam = thirds.find(t => t.group === altGroup);
-        if (altTeam) alts.push({ team: altTeam.team, group: altGroup, condition: altAssignment.swapped+' qualifies' });
-      }
-    }
     return {
       team: thirdTeam?.team || ('3'+assignedGroup),
       confidence: thirdsConfidence,
-      alts
+      alts: []
     };
   }
 
@@ -913,18 +927,65 @@ function buildBracketView() {
   const viewBtns = div({style:{display:'flex',gap:'6px',marginBottom:'12px'}});
   const legend = div({style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'12px',padding:'8px 12px',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}});
   const note = div({style:{padding:'8px 12px',borderRadius:'8px',marginBottom:'12px',background:'rgba(59,130,246,0.05)',border:'1px solid rgba(59,130,246,0.15)',fontSize:'10px',color:'#6b7280',lineHeight:'1.4'}});
+  // Simulation control panel — only shown in Simulated mode. Holds Run/Re-run/
+  // Cancel buttons and a progress bar. Rendered once and refreshed in place.
+  const simPanel = div({style:{marginBottom:'12px',display:'none'}});
+
+  function fmtAge(ts) {
+    if (!ts) return '';
+    const sec = Math.round((Date.now() - ts) / 1000);
+    if (sec < 60) return sec + 's ago';
+    if (sec < 3600) return Math.round(sec/60) + 'm ago';
+    if (sec < 86400) return Math.round(sec/3600) + 'h ago';
+    return Math.round(sec/86400) + 'd ago';
+  }
+
+  function updateSimPanel() {
+    simPanel.innerHTML = '';
+    if (mode !== 'simulated') { simPanel.style.display = 'none'; return; }
+    simPanel.style.display = 'block';
+    const s = $sim.get();
+    const curKey = dataFingerprint(byKey);
+    const isRunning = s.status === 'running';
+    const hasFresh = s.status === 'done' && s.key === curKey;
+    const hasStale = s.status === 'done' && s.key && s.key !== curKey;
+    const pct = isRunning && s.trials ? Math.round((s.completed/s.trials)*100) : 0;
+
+    const left = div({style:{flex:1,minWidth:0}});
+    if (isRunning) {
+      left.appendChild(div({style:{fontSize:'12px',fontWeight:600,color:'#93c5fd',marginBottom:'4px'}}, `Simulating… ${s.completed.toLocaleString()} / ${s.trials.toLocaleString()} (${pct}%)`));
+      left.appendChild(div({style:{height:'5px',background:'rgba(255,255,255,0.06)',borderRadius:'3px',overflow:'hidden'}},
+        div({style:{height:'100%',width:pct+'%',background:'#3b82f6',transition:'width 0.2s'}})
+      ));
+    } else if (hasFresh) {
+      left.appendChild(div({style:{fontSize:'12px',fontWeight:600,color:'#4ade80',marginBottom:'2px'}}, `✓ ${s.trials.toLocaleString()} simulations · ${s.elapsedMs}ms`));
+      left.appendChild(div({style:{fontSize:'10px',color:'#6b7280'}}, `Run ${fmtAge(s.savedAt)} · cached locally`));
+    } else if (hasStale) {
+      left.appendChild(div({style:{fontSize:'12px',fontWeight:600,color:'#fbbf24',marginBottom:'2px'}}, `⚠ Stale results from ${fmtAge(s.savedAt)}`));
+      left.appendChild(div({style:{fontSize:'10px',color:'#9ca3af'}}, 'Group scores have updated since last run — re-run to refresh'));
+    } else {
+      left.appendChild(div({style:{fontSize:'12px',fontWeight:600,color:'#e2e8f0',marginBottom:'2px'}}, 'No simulation yet'));
+      left.appendChild(div({style:{fontSize:'10px',color:'#9ca3af'}}, 'Click Run to compute bracket probabilities (~1–2 seconds)'));
+    }
+
+    const right = isRunning
+      ? btn({style:{padding:'7px 14px',borderRadius:'6px',background:'rgba(239,68,68,0.15)',border:'1px solid rgba(239,68,68,0.4)',color:'#f87171',fontSize:'12px',fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0},
+          onclick:cancelSimulation}, 'Cancel')
+      : btn({style:{padding:'7px 14px',borderRadius:'6px',background:'rgba(59,130,246,0.2)',border:'1px solid rgba(59,130,246,0.5)',color:'#93c5fd',fontSize:'12px',fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0},
+          onclick:()=>startSimulation(byKey, SIM_TRIALS_DEFAULT)}, hasFresh || hasStale ? '↻ Re-run' : '▶ Run Simulation');
+
+    simPanel.appendChild(div({style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 14px',borderRadius:'8px',background:'rgba(255,255,255,0.04)',border:'1px solid '+(isRunning?'rgba(59,130,246,0.3)':hasStale?'rgba(251,191,36,0.25)':'rgba(255,255,255,0.08)')}},
+      left, right));
+  }
+
   function updateNote() {
     note.innerHTML = '';
     if (mode === 'simulated') {
-      const s = $sim.get();
-      const status = s.status === 'running' ? 'Running 5,000 simulations…'
-        : s.status === 'done' ? `Based on ${s.trials.toLocaleString()} Monte Carlo simulations (${s.elapsedMs}ms). Goals modeled via FIFA-rank Elo + Poisson. 3rd-place slot assignment uses FIFA Annex C constraints.`
-        : 'Click Simulated to run.';
-      note.appendChild(span({style:{color:'#93c5fd',fontWeight:600}},'🎲 Simulated: '));
-      note.appendChild(document.createTextNode(status));
+      note.appendChild(span({style:{color:'#93c5fd',fontWeight:600}},'🎲 How this works: '));
+      note.appendChild(document.createTextNode('Each remaining group game is simulated via FIFA-rank Elo + Poisson goal sampling. Across thousands of trials, we record how often each team lands in each Round of 32 slot. Bars show those probabilities.'));
     } else {
       note.appendChild(span({style:{color:'#93c5fd',fontWeight:600}},'Note: '));
-      note.appendChild(document.createTextNode('3rd-place slots use FIFA Annex C constraints (each slot only accepts 3rds from 5 specific groups). A valid assignment is chosen — FIFA may differ in specific cases.'));
+      note.appendChild(document.createTextNode('Projected mode uses current group standings — whichever team is currently leading appears as winner. 3rd-place slots respect FIFA Annex C constraints. For probabilistic forecasts, use Simulated.'));
     }
   }
 
@@ -932,12 +993,12 @@ function buildBracketView() {
     legend.innerHTML = '';
     let items;
     if (mode === 'simulated') {
-      items = [{color:'#3b82f6', label:'Bar width = probability'}];
+      items = [{color:'#3b82f6', label:'Bar width = probability across simulations'}];
     } else {
       items = [
-        {color:'#4ade80', label:'Confirmed'},
-        {color:'#93c5fd', label:'Projected'},
-        {color:'#6b7280', label:'Unknown'},
+        {color:'#4ade80', label:'Confirmed (group complete)'},
+        {color:'#93c5fd', label:'Projected (current leader)'},
+        {color:'#6b7280', label:'Unknown (group not started)'},
       ];
     }
     items.forEach(({color,label}) => {
@@ -948,7 +1009,9 @@ function buildBracketView() {
     });
   }
 
-  const MODES = [{id:'conservative',l:'🔒 Confirmed'},{id:'optimistic',l:'📊 Projected'},{id:'simulated',l:'🎲 Simulated'}];
+  // Confirmed mode removed — it was rarely meaningful and the "all groups
+  // mathematically locked" gate is already part of Projected's confidence colors.
+  const MODES = [{id:'optimistic',l:'📊 Projected'},{id:'simulated',l:'🎲 Simulated'}];
   const VIEWS = [{id:'full',l:'🏆 Full Bracket'},{id:'r32',l:'Round of 32'}];
 
   function updateBtnStyles() {
@@ -980,18 +1043,20 @@ function buildBracketView() {
     updateBtnStyles();
     updateLegend();
     updateNote();
+    updateSimPanel();
 
-    // Kick off simulation when mode requires it
-    if (mode === 'simulated') {
-      ensureSimulation(byKey, 5000);
-    }
+    // NB: do NOT call ensureSimulation here. Auto-triggering caused a recursive
+    // render cascade ($sim.set fires sub → render → ensureSimulation → ...).
+    // Sim is now strictly button-triggered via startSimulation/cancelSimulation.
 
     const proj = projectBracket(byKey, mode);
     const r32Map = {};
     proj.r32.forEach(m => { r32Map[m.num] = m; });
 
     const simState = $sim.get();
-    const simData = (mode === 'simulated' && simState.status === 'done') ? simState.data : null;
+    const curKey = dataFingerprint(byKey);
+    // Use sim data only if it matches the current fixture state (no stale data)
+    const simData = (mode === 'simulated' && simState.status === 'done' && simState.key === curKey) ? simState.data : null;
 
     function getSlots(num) {
       const pm = r32Map[num];
@@ -1107,10 +1172,21 @@ function buildBracketView() {
   // stacks paint as soon as MC finishes. Self-unsubscribes on next mode change
   // to avoid leaking subscriptions across view rebuilds.
   let _simUnsub = null;
-  const wrap = div({}, modeBtns, viewBtns, legend, note, content);
+  const wrap = div({}, modeBtns, viewBtns, legend, note, simPanel, content);
+  let _lastSimStatus = $sim.get().status;
   _simUnsub = $sim.sub(() => {
     if (!wrap.isConnected) { if (_simUnsub) _simUnsub(); return; }
-    if (mode === 'simulated') render();
+    if (mode !== 'simulated') return;
+    const s = $sim.get();
+    // While running, only refresh the progress panel (cheap). Avoid touching
+    // the bracket DOM until the sim finishes — that's when candidates appear.
+    if (s.status === 'running') {
+      updateSimPanel();
+    } else if (s.status !== _lastSimStatus || s.status === 'done') {
+      // Status flipped (running → done, or fresh data) → full re-render
+      render();
+    }
+    _lastSimStatus = s.status;
   });
 
   render();
