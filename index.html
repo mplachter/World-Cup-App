@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.7.2';
+const APP_VERSION = 'v0.7.3';
 const BUILD_DATE = '2026-06-23';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -1190,10 +1190,16 @@ function buildBracketView() {
       return pbslot(home, away, entry, small);
     }
 
-    function makeBhalf(nums, depth) {
+    function makeBhalf(nums, depth, side='left') {
       // depth: 0=R32 (small slots), 1=R16, 2=QF. Gap and padding are derived so
       // slot midpoints align with the previous column's pair midpoints; symmetric
       // top/bottom padding makes the column the same total height as R32.
+      //
+      // side='left' is the default (slots on the left, connector on the right
+      // pointing toward the next column rightward). side='right' mirrors the
+      // SVG via scaleX(-1) and swaps flex order so the connector sits to the
+      // LEFT of the slots and points back toward the center — what the right
+      // half of the bracket needs.
       const small = depth === 0;
       const sh = small ? BRACKET_BASE_SH : BRACKET_FULL_SH;
       const gap = BRACKET_GAPS[depth];
@@ -1202,7 +1208,12 @@ function buildBracketView() {
       const slots = div({style:{display:'flex',flexDirection:'column',gap:gap+'px',
         paddingTop:pad+'px',paddingBottom:pad+'px'}});
       nums.forEach(n => slots.appendChild(makeBslot(n, small)));
-      return div({style:{display:'flex',alignItems:'center'}}, slots, connector(nums.length,sh,gap));
+      const conn = connector(nums.length, sh, gap);
+      if (side === 'right') {
+        conn.style.transform = 'scaleX(-1)';
+        return div({style:{display:'flex',alignItems:'center'}}, conn, slots);
+      }
+      return div({style:{display:'flex',alignItems:'center'}}, slots, conn);
     }
 
     if (view === 'r32') {
@@ -1259,9 +1270,9 @@ function buildBracketView() {
       center.appendChild(div({style:{height:'202.5px',flexShrink:0}})); // bottom spacer
       row.appendChild(center);
 
-      [[colLabel('QF'),  makeBhalf(BR.qf,  2)],
-       [colLabel('R16'), makeBhalf(BR.r16, 1)],
-       [colLabel('R32'), makeBhalf(BR.r32, 0)]].forEach(([lbl,half])=>{
+      [[colLabel('QF'),  makeBhalf(BR.qf,  2, 'right')],
+       [colLabel('R16'), makeBhalf(BR.r16, 1, 'right')],
+       [colLabel('R32'), makeBhalf(BR.r32, 0, 'right')]].forEach(([lbl,half])=>{
         const c=div({style:{display:'flex',flexDirection:'column',alignItems:'center'}});
         c.appendChild(lbl);c.appendChild(half);row.appendChild(c);
       });
