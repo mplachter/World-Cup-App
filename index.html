@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.7.0';
+const APP_VERSION = 'v0.7.1';
 const BUILD_DATE = '2026-06-23';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -37,6 +37,27 @@ function createStore(init) {
     set: (next) => { state = typeof next === 'function' ? next(state) : next; _subs.get(id).forEach(fn => fn(state)); },
     sub: (fn) => { _subs.get(id).add(fn); return () => _subs.get(id).delete(fn); },
   };
+}
+
+// Wrap createStore with localStorage persistence. Hydrates the initial value
+// from `key`, then auto-saves on every change. Optional `validate` rejects
+// stale/invalid persisted values (e.g. an old tab id that was renamed) and
+// falls back to the default. Storage failures (private mode, quota) silently
+// degrade to in-memory only.
+function persistedStore(key, defaultValue, validate) {
+  let initial = defaultValue;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw !== null) {
+      const parsed = JSON.parse(raw);
+      if (!validate || validate(parsed)) initial = parsed;
+    }
+  } catch {}
+  const store = createStore(initial);
+  store.sub((v) => {
+    try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
+  });
+  return store;
 }
 
 const ce = (tag, attrs, ...children) => {
@@ -121,8 +142,13 @@ function localTime(t){
 function processRaw(json){const byKey={},byNum={},all=[];(json.matches||[]).forEach(m=>{const h=norm(m.team1),a=norm(m.team2);const e={home:h,away:a,score:m.score&&m.score.ft?m.score.ft[0]+"-"+m.score.ft[1]:null,ht:m.score&&m.score.ht?m.score.ht[0]+"-"+m.score.ht[1]:null,goals1:m.goals1||[],goals2:m.goals2||[],date:m.date,time:localTime(m.time),ground:m.ground,stage:stageOf(m.round),round:m.round,num:m.num||null};byKey[pkey(h,a)]=e;if(m.num)byNum[m.num]=e;all.push(e);});return{byKey,byNum,all};}
 
 // ─── APP STATE ────────────────────────────────────────────────────────────────
-const $tab    = createStore("schedule");
-const $selectedTeam = createStore(null); // when set, Teams tab shows detail view
+// Persisted across refreshes. Validate $tab against the current tab set so a
+// stale id (e.g. 'rankings' from before the Teams rename) falls back to the
+// default rather than rendering nothing.
+const VALID_TABS = ['schedule', 'groups', 'bracket', 'teams'];
+const $tab = persistedStore('wc2026:tab', 'schedule', v => VALID_TABS.includes(v));
+const $selectedTeam = persistedStore('wc2026:selectedTeam', null,
+  v => v === null || typeof v === 'string');
 
 // Helper: switch to the Teams tab and open a team's detail page. Used by all
 // the team-name elements scattered through the bracket (slot rows, candidate
