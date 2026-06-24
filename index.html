@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.7.1';
+const APP_VERSION = 'v0.7.2';
 const BUILD_DATE = '2026-06-23';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -876,6 +876,25 @@ function projSlotEl(projSlot) {
   return div({}, mainEl, altsEl);
 }
 
+// ─── BRACKET LAYOUT GEOMETRY ─────────────────────────────────────────────────
+// The visual bracket has 4 columns per side (R32, R16, QF, then the SF/Final
+// center column). Each column has half as many slots as the one before it, so
+// for connector lines to actually land on the next column's slot midpoints,
+// every column needs a calculated gap and equal top/bottom padding so all
+// columns end up the same total height (BRACKET_TOTAL_H).
+//
+// Slot midpoint alignment rule:
+//   gap_d = 2 * (sh_{d-1} + gap_{d-1}) - sh_d
+//
+// With R32 small (130px) at 10px gap, the R16/QF gaps fall out:
+//   R16 gap = 2*(130+10) - 145 = 135
+//   QF  gap = 2*(145+135) - 145 = 415
+const BRACKET_BASE_SH = 130;   // R32 slot height (small variant)
+const BRACKET_BASE_GAP = 10;
+const BRACKET_FULL_SH = 145;   // R16/QF/SF/Final slot height
+const BRACKET_TOTAL_H = 8 * BRACKET_BASE_SH + 7 * BRACKET_BASE_GAP; // 1110 — height all columns pad to
+const BRACKET_GAPS = [BRACKET_BASE_GAP, 135, 415]; // indexed by depth (R32=0, R16=1, QF=2)
+
 function connector(count,sh,gap){
   const totalH=count*sh+(count-1)*gap;
   const el=svg({width:'20',height:String(totalH),style:{flexShrink:0}});
@@ -1171,11 +1190,17 @@ function buildBracketView() {
       return pbslot(home, away, entry, small);
     }
 
-    function makeBhalf(nums, small=false) {
-      // Heights match pbslot's minHeight so connector midpoints align with slot midpoints
-      const sh = small ? 130 : 145;
-      const gap = 10;
-      const slots = div({style:{display:'flex',flexDirection:'column',gap:gap+'px'}});
+    function makeBhalf(nums, depth) {
+      // depth: 0=R32 (small slots), 1=R16, 2=QF. Gap and padding are derived so
+      // slot midpoints align with the previous column's pair midpoints; symmetric
+      // top/bottom padding makes the column the same total height as R32.
+      const small = depth === 0;
+      const sh = small ? BRACKET_BASE_SH : BRACKET_FULL_SH;
+      const gap = BRACKET_GAPS[depth];
+      const slotArea = nums.length * sh + (nums.length - 1) * gap;
+      const pad = Math.max(0, (BRACKET_TOTAL_H - slotArea) / 2);
+      const slots = div({style:{display:'flex',flexDirection:'column',gap:gap+'px',
+        paddingTop:pad+'px',paddingBottom:pad+'px'}});
       nums.forEach(n => slots.appendChild(makeBslot(n, small)));
       return div({style:{display:'flex',alignItems:'center'}}, slots, connector(nums.length,sh,gap));
     }
@@ -1204,29 +1229,39 @@ function buildBracketView() {
       const BL = {r32:[74,76,73,75,78,77,81,82], r16:[89,90,91,92], qf:[97,99]};
       const BR = {r32:[83,84,85,87,80,86,88,79], r16:[93,94,95,96], qf:[98,100]};
 
-      [[colLabel('R32'), makeBhalf(BL.r32,true)],
-       [colLabel('R16'), makeBhalf(BL.r16)],
-       [colLabel('QF'),  makeBhalf(BL.qf)]].forEach(([lbl,half])=>{
+      [[colLabel('R32'), makeBhalf(BL.r32, 0)],
+       [colLabel('R16'), makeBhalf(BL.r16, 1)],
+       [colLabel('QF'),  makeBhalf(BL.qf,  2)]].forEach(([lbl,half])=>{
         const c=div({style:{display:'flex',flexDirection:'column',alignItems:'center'}});
         c.appendChild(lbl);c.appendChild(half);row.appendChild(c);
       });
 
-      const center = div({style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'8px',minWidth:'160px',padding:'0 8px'}});
-      center.appendChild(div({style:{fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase'}},'SF'));
+      // Center column: SF1 midpoint must hit QF1's row-y (275), SF2 must hit
+      // QF2's (835). Explicit top/bottom spacers + a flex:1 middle that
+      // vertically centers FINAL + 3rd Place in the remaining ~400px.
+      // SF1 group is label(14) + slot(145) = 159 tall; midpoint of slot at
+      // 275 means group top = 275 - 72.5 - 14 = 188.5px from column top.
+      const center = div({style:{display:'flex',flexDirection:'column',alignItems:'center',
+        minWidth:'160px',padding:'0 8px',height:BRACKET_TOTAL_H+'px'}});
+      center.appendChild(div({style:{height:'188.5px',flexShrink:0}})); // top spacer
+      center.appendChild(div({style:{fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase',height:'14px',flexShrink:0}},'SF'));
       center.appendChild(makeBslot(101));
-      center.appendChild(div({style:{width:'100%',height:'1px',background:'rgba(255,255,255,0.05)'}}));
-      center.appendChild(div({style:{fontSize:'11px',fontWeight:'700',color:'#fbbf24'}},'🏆 FINAL'));
-      center.appendChild(makeBslot(104));
-      center.appendChild(div({style:{fontSize:'10px',color:'#6b7280'}},'3rd Place'));
-      center.appendChild(makeBslot(103));
-      center.appendChild(div({style:{width:'100%',height:'1px',background:'rgba(255,255,255,0.05)'}}));
-      center.appendChild(div({style:{fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase'}},'SF'));
+      // Middle: flex:1 fills the space between SF1 and SF2, content centered.
+      const middle = div({style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',width:'100%',gap:'4px'}});
+      middle.appendChild(div({style:{fontSize:'11px',fontWeight:'700',color:'#fbbf24'}},'🏆 FINAL'));
+      middle.appendChild(makeBslot(104));
+      middle.appendChild(div({style:{height:'12px'}}));
+      middle.appendChild(div({style:{fontSize:'10px',color:'#6b7280'}},'3rd Place'));
+      middle.appendChild(makeBslot(103));
+      center.appendChild(middle);
+      center.appendChild(div({style:{fontSize:'10px',fontWeight:'600',color:'#4b5563',textTransform:'uppercase',height:'14px',flexShrink:0}},'SF'));
       center.appendChild(makeBslot(102));
+      center.appendChild(div({style:{height:'202.5px',flexShrink:0}})); // bottom spacer
       row.appendChild(center);
 
-      [[colLabel('QF'),  makeBhalf(BR.qf)],
-       [colLabel('R16'), makeBhalf(BR.r16)],
-       [colLabel('R32'), makeBhalf(BR.r32,true)]].forEach(([lbl,half])=>{
+      [[colLabel('QF'),  makeBhalf(BR.qf,  2)],
+       [colLabel('R16'), makeBhalf(BR.r16, 1)],
+       [colLabel('R32'), makeBhalf(BR.r32, 0)]].forEach(([lbl,half])=>{
         const c=div({style:{display:'flex',flexDirection:'column',alignItems:'center'}});
         c.appendChild(lbl);c.appendChild(half);row.appendChild(c);
       });
