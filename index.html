@@ -22,8 +22,8 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.9.0';
-const BUILD_DATE = '2026-06-23';
+const APP_VERSION = 'v0.9.1';
+const BUILD_DATE = '2026-06-25';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
 const _subs = new Map();
@@ -299,6 +299,9 @@ loadSquads();
 // ─── ESPN LIVE SCORES ─────────────────────────────────────────────────────────
 const $espn = createStore({});
 const $espnStatus = createStore("idle");
+// Per-match detail (subs, cards) fetched lazily from ESPN summary endpoint
+// Shape: { [eventId]: { loading, loaded, error, fetchedAt, subs:[], cards:[] } }
+const $espnDetails = createStore({});
 
 const ESPN_NORM = {
   "Czechia":"Czech Republic","Korea Republic":"South Korea","Cote d'Ivoire":"Ivory Coast",
@@ -336,6 +339,7 @@ async function loadESPN(){
       const score=home.score+"-"+away.score;
       const bcast=(comp.broadcasts&&comp.broadcasts[0]&&comp.broadcasts[0].names)||[];
       map[key]={
+        id: ev.id,
         score, state, clock, detail,
         homeScore:home.score, awayScore:away.score,
         homeName:hName, awayName:aName,
@@ -354,6 +358,61 @@ async function loadESPN(){
 }
 loadESPN();
 setInterval(loadESPN, 60000);
+
+// ─── ESPN PER-MATCH DETAIL (subs, cards) ─────────────────────────────────────
+// Lazy fetch. Goals already come from openfootball; this adds subs + cards.
+// Parser is defensive — ESPN field names may vary across matches.
+function parseEspnSummary(j){
+  const subs=[]; const cards=[];
+  const events = (j && (j.keyEvents || j.scoringPlays)) || [];
+  events.forEach(ev=>{
+    const t = ((ev.type && ev.type.text) || ev.text || '').toLowerCase();
+    const minute = (ev.clock && ev.clock.displayValue) || ev.minute || '';
+    const teamName = (ev.team && (ev.team.displayName || ev.team.name)) || '';
+    const teamShort = (ev.team && (ev.team.abbreviation || ev.team.shortDisplayName)) || teamName;
+    const athletes = (ev.athletesInvolved || ev.athletes || []).map(a=>({
+      name: a.displayName || a.fullName || a.shortName || a.name || '',
+      jersey: a.jersey || ''
+    }));
+    if (t.includes('substitution') || t === 'sub' || t.includes('sub ')) {
+      // Convention used by ESPN soccer: athletes[0] = in, athletes[1] = out
+      subs.push({minute, team: teamName, teamShort,
+        playerIn: (athletes[0]&&athletes[0].name)||'',
+        playerOut: (athletes[1]&&athletes[1].name)||''});
+    } else if (t.includes('yellow card') || t.includes('yellow-red') || t === 'yellow') {
+      cards.push({minute, team: teamName, teamShort,
+        player: (athletes[0]&&athletes[0].name)||'', type: t.includes('yellow-red')?'yellowred':'yellow'});
+    } else if (t.includes('red card') || t === 'red') {
+      cards.push({minute, team: teamName, teamShort,
+        player: (athletes[0]&&athletes[0].name)||'', type: 'red'});
+    }
+  });
+  return {subs, cards};
+}
+
+async function loadEspnSummary(eventId, force=false){
+  if (!eventId) return;
+  const cur = $espnDetails.get();
+  const existing = cur[eventId];
+  if (!force) {
+    if (existing && existing.loading) return;
+    if (existing && existing.loaded && (Date.now() - (existing.fetchedAt||0) < 25000)) return; // 25s cache
+  }
+  $espnDetails.set({...cur, [eventId]: {...(existing||{subs:[],cards:[]}), loading:true}});
+  try{
+    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${eventId}`;
+    const r = await fetch(url,{cache:'no-cache'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j = await r.json();
+    const parsed = parseEspnSummary(j);
+    const cur2 = $espnDetails.get();
+    $espnDetails.set({...cur2, [eventId]: {...parsed, loading:false, loaded:true, error:null, fetchedAt: Date.now()}});
+  }catch(e){
+    console.warn('[ESPN summary]', eventId, e.message);
+    const cur2 = $espnDetails.get();
+    $espnDetails.set({...cur2, [eventId]: {...(cur2[eventId]||{subs:[],cards:[]}), loading:false, error:e.message}});
+  }
+}
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function parseScore(s){if(!s)return null;const p=s.split("-");if(p.length!==2)return null;const h=parseInt(p[0]),a=parseInt(p[1]);return isNaN(h)||isNaN(a)?null:{h,a};}
@@ -445,6 +504,73 @@ function matchCard(entry, todayISO, showSquads=true) {
   const barBg  = status==="live"?"rgba(239,68,68,0.12)":status==="played"?"rgba(75,85,99,0.12)":status==="today"?"rgba(217,119,6,0.15)":"rgba(30,58,95,0.10)";
   const border = status==="live"?"1px solid rgba(239,68,68,0.35)":status==="today"?"1px solid rgba(217,119,6,0.4)":"1px solid rgba(255,255,255,0.07)";
 
+  const espnEventId = espn && espn.id;
+  const canHaveEvents = !!espnEventId && (isLive || status==='played');
+
+  // Events section: subs + cards from ESPN summary (lazy-loaded on expand)
+  const eventsEl = div({style:{marginBottom:'12px'}});
+  function renderEvents(){
+    eventsEl.innerHTML = '';
+    if (!canHaveEvents) return;
+    const det = $espnDetails.get()[espnEventId];
+    if (!det) {
+      eventsEl.appendChild(div({style:{fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'Loading match events…'));
+      return;
+    }
+    if (det.loading && !det.loaded) {
+      eventsEl.appendChild(div({style:{fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'Loading match events…'));
+      return;
+    }
+    if (det.error && !det.loaded) {
+      eventsEl.appendChild(div({style:{fontSize:'11px',color:'#7f1d1d'}},'Could not load match events (' + det.error + ')'));
+      return;
+    }
+    const subs = det.subs || [];
+    const cards = det.cards || [];
+    if (!subs.length && !cards.length) {
+      eventsEl.appendChild(div({style:{fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'No subs or cards yet.'));
+      return;
+    }
+    // Group by team for two-column layout consistent with goals
+    function teamSide(name){
+      // ESPN team names may differ from openfootball names; use loose match
+      const n = (name||'').toLowerCase();
+      if (n.includes((home||'').toLowerCase()) || (home||'').toLowerCase().includes(n)) return 'home';
+      if (n.includes((away||'').toLowerCase()) || (away||'').toLowerCase().includes(n)) return 'away';
+      return 'home';
+    }
+    if (subs.length) {
+      const homeSubs = subs.filter(s=>teamSide(s.team)==='home');
+      const awaySubs = subs.filter(s=>teamSide(s.team)==='away');
+      eventsEl.appendChild(div({style:{fontSize:'10px',color:'#6b7280',fontWeight:600,letterSpacing:'0.5px',marginBottom:'4px',textTransform:'uppercase'}},'Substitutions'));
+      eventsEl.appendChild(div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}},
+        div({}, ...homeSubs.map(s=>div({style:{fontSize:'11px',color:'#9ca3af',lineHeight:'1.7'}},
+          '🔄 ', span({style:{color:'#10b981'}}, s.playerIn||'?'), ' ← ', span({style:{color:'#9ca3af'}}, s.playerOut||'?'), ' ',
+          span({style:{color:'#4b5563'}}, s.minute)
+        ))),
+        div({style:{textAlign:'right'}}, ...awaySubs.map(s=>div({style:{fontSize:'11px',color:'#9ca3af',lineHeight:'1.7'}},
+          span({style:{color:'#4b5563'}}, s.minute), ' ',
+          span({style:{color:'#9ca3af'}}, s.playerOut||'?'), ' → ', span({style:{color:'#10b981'}}, s.playerIn||'?'), ' 🔄'
+        )))
+      ));
+    }
+    if (cards.length) {
+      const homeCards = cards.filter(c=>teamSide(c.team)==='home');
+      const awayCards = cards.filter(c=>teamSide(c.team)==='away');
+      eventsEl.appendChild(div({style:{fontSize:'10px',color:'#6b7280',fontWeight:600,letterSpacing:'0.5px',marginBottom:'4px',textTransform:'uppercase'}},'Cards'));
+      eventsEl.appendChild(div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}},
+        div({}, ...homeCards.map(c=>div({style:{fontSize:'11px',color:'#9ca3af',lineHeight:'1.7'}},
+          (c.type==='red'?'🟥':c.type==='yellowred'?'🟨🟥':'🟨'), ' ', c.player||'?', ' ',
+          span({style:{color:'#4b5563'}}, c.minute)
+        ))),
+        div({style:{textAlign:'right'}}, ...awayCards.map(c=>div({style:{fontSize:'11px',color:'#9ca3af',lineHeight:'1.7'}},
+          span({style:{color:'#4b5563'}}, c.minute), ' ', c.player||'?', ' ',
+          (c.type==='red'?'🟥':c.type==='yellowred'?'🟨🟥':'🟨')
+        )))
+      ));
+    }
+  }
+
   function buildBody() {
     const kids = [];
     if (goals1.length||goals2.length) {
@@ -453,6 +579,7 @@ function matchCard(entry, todayISO, showSquads=true) {
         div({style:{textAlign:'right'}},...goals2.map(g=>div({style:{fontSize:'11px',color:'#9ca3af',lineHeight:'1.8'}},span({style:{color:'#4b5563'}},g.minute+"'"),' '+g.name+' '+(g.owngoal?'OG ⚽':g.penalty?'P ⚽':'⚽'))))
       ));
     }
+    if (canHaveEvents) kids.push(eventsEl);
     if (showSquads && stage==="group") {
       kids.push(div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}},
         ...[home,away].map(team=>div({style:{minWidth:0}},
@@ -470,13 +597,26 @@ function matchCard(entry, todayISO, showSquads=true) {
 
   const bodyEl = div({style:{borderTop:'1px solid rgba(255,255,255,0.05)',padding:'12px'}},...buildBody());
   const arrowEl = span({style:{fontSize:'11px',color:'#4b5563'}});
+  let unsubDetails = null;
+  let liveRefresh = null;
 
   const card = div({style:{borderRadius:'8px',marginBottom:'8px',overflow:'hidden',border,background:'rgba(255,255,255,0.03)'}},
     div({style:{cursor:'pointer'},onclick:function(){
       open = !open;
       arrowEl.textContent = open?'▲':'▼';
-      if(open) card.appendChild(bodyEl);
-      else if(bodyEl.parentNode===card) card.removeChild(bodyEl);
+      if(open) {
+        card.appendChild(bodyEl);
+        if (canHaveEvents) {
+          renderEvents();
+          loadEspnSummary(espnEventId);
+          unsubDetails = $espnDetails.sub(()=>renderEvents());
+          if (isLive) liveRefresh = setInterval(()=>loadEspnSummary(espnEventId, true), 30000);
+        }
+      } else {
+        if (bodyEl.parentNode===card) card.removeChild(bodyEl);
+        if (unsubDetails) { unsubDetails(); unsubDetails=null; }
+        if (liveRefresh) { clearInterval(liveRefresh); liveRefresh=null; }
+      }
     }},
       div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 12px',background:barBg,borderBottom:'1px solid rgba(255,255,255,0.05)'}},
         div({style:{display:'flex',alignItems:'center',gap:'8px'}},
