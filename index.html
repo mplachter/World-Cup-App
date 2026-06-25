@@ -430,11 +430,21 @@ function parseEventText(text, evType){
     if (m) return {player: m[1].trim()};
     return null;
   }
+  if (t.includes('goal')) {
+    // "Goal! Mexico 1, South Africa 0. Julián Quiñones (Mexico) right-footed shot..."
+    // "Own Goal by Player Name (Team)."
+    // "Penalty goal! ..."
+    let m = text.match(/(?:Goal[!.]?\s*[^.]+\.\s*)([^(.]+?)\s*\(/i);
+    if (m) return {scorer: m[1].trim()};
+    m = text.match(/Own Goal by\s+([^(.]+?)\s*(?:\(|$)/i);
+    if (m) return {scorer: m[1].trim(), ownGoal: true};
+    return null;
+  }
   return null;
 }
 
 function parseEspnSummary(j){
-  const subs=[]; const cards=[];
+  const subs=[]; const cards=[]; const goals=[];
   const athleteMap = buildAthleteMap(j);
   const events = (j && (j.keyEvents || j.scoringPlays)) || [];
   // One-shot dump of the first response so we can see what shape we're getting.
@@ -479,9 +489,18 @@ function parseEspnSummary(j){
         if (parsed) player = parsed.player;
       }
       cards.push({minute, team: teamName, teamShort, player, type: 'red'});
+    } else if (t.includes('goal') || ev.scoringPlay === true) {
+      let scorer = names[0] || '';
+      const ownGoal = t.includes('own goal') || /own goal/i.test(ev.text||'');
+      const penalty = t.includes('penalty') || /penalty/i.test(t);
+      if (!scorer) {
+        const parsed = parseEventText(ev.text || ev.shortText || '', 'goal');
+        if (parsed) scorer = parsed.scorer;
+      }
+      goals.push({minute, team: teamName, teamShort, scorer, ownGoal, penalty});
     }
   });
-  return {subs, cards};
+  return {subs, cards, goals};
 }
 
 async function loadEspnSummary(eventId, force=false){
@@ -621,8 +640,12 @@ function matchCard(entry, todayISO, showSquads=true) {
     }
     const subs = det.subs || [];
     const cards = det.cards || [];
-    if (!subs.length && !cards.length) {
-      eventsEl.appendChild(div({style:{fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'No subs or cards yet.'));
+    const espnGoals = det.goals || [];
+    // Only show ESPN goals when openfootball hasn't provided them yet (live games).
+    // For completed matches openfootball goals already render at top of body.
+    const showEspnGoals = espnGoals.length > 0 && goals1.length === 0 && goals2.length === 0;
+    if (!subs.length && !cards.length && !showEspnGoals) {
+      eventsEl.appendChild(div({style:{fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'No events yet.'));
       return;
     }
     // Group by team for two-column layout consistent with goals
@@ -632,6 +655,21 @@ function matchCard(entry, todayISO, showSquads=true) {
       if (n.includes((home||'').toLowerCase()) || (home||'').toLowerCase().includes(n)) return 'home';
       if (n.includes((away||'').toLowerCase()) || (away||'').toLowerCase().includes(n)) return 'away';
       return 'home';
+    }
+    if (showEspnGoals) {
+      const homeGoals = espnGoals.filter(g=>teamSide(g.team)==='home');
+      const awayGoals = espnGoals.filter(g=>teamSide(g.team)==='away');
+      eventsEl.appendChild(div({style:{fontSize:'10px',color:'#6b7280',fontWeight:600,letterSpacing:'0.5px',marginBottom:'4px',textTransform:'uppercase'}},'Goals'));
+      eventsEl.appendChild(div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}},
+        div({}, ...homeGoals.map(g=>div({style:{fontSize:'11px',color:'#9ca3af',lineHeight:'1.8'}},
+          (g.ownGoal?'⚽ OG ':g.penalty?'⚽ P ':'⚽ '), g.scorer||'?', ' ',
+          span({style:{color:'#4b5563'}}, g.minute)
+        ))),
+        div({style:{textAlign:'right'}}, ...awayGoals.map(g=>div({style:{fontSize:'11px',color:'#9ca3af',lineHeight:'1.8'}},
+          span({style:{color:'#4b5563'}}, g.minute), ' ', g.scorer||'?', ' ',
+          (g.ownGoal?'OG ⚽':g.penalty?'P ⚽':'⚽')
+        )))
+      ));
     }
     if (subs.length) {
       const homeSubs = subs.filter(s=>teamSide(s.team)==='home');
