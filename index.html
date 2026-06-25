@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.8.0';
+const APP_VERSION = 'v0.8.1';
 const BUILD_DATE = '2026-06-23';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -205,11 +205,22 @@ function clickableTeam(el, teamName) {
 }
 const $data   = createStore(null);
 const $status = createStore("loading");
-const $today  = createStore(new Date().toISOString().slice(0,10));
-
-// Today from worldtimeapi
-fetch("https://worldtimeapi.org/api/timezone/America/New_York")
-  .then(r=>r.json()).then(d=>{if(d&&d.datetime)$today.set(new Date(d.datetime).toISOString().slice(0,10));}).catch(()=>{});
+// Local YYYY-MM-DD. Previously used new Date().toISOString().slice(0,10) which
+// returns the UTC date — anywhere west of UTC, that's off by one in the evening
+// (and worldtimeapi added a second UTC conversion on top of that, compounding
+// the bug). Build the date from the local Date getters instead.
+function localDateISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0');
+}
+const $today = createStore(localDateISO());
+// Re-check every minute in case the day rolls over while the app is open.
+setInterval(() => {
+  const cur = localDateISO();
+  if (cur !== $today.get()) $today.set(cur);
+}, 60000);
 
 // Fixtures
 const URLS=["https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json","https://cdn.jsdelivr.net/gh/openfootball/worldcup.json@master/2026/worldcup.json"];
@@ -1286,7 +1297,12 @@ function buildBracketView() {
       // justifyContent:center makes the bracket sit in the middle of the wider
       // container on desktop. minWidth:980 ensures it still scrolls horizontally
       // on narrow (mobile) screens.
-      const row = div({style:{display:'flex',alignItems:'center',justifyContent:'center',minWidth:'980px',padding:'4px 0'}});
+      // width:max-content sizes the row to its content. With margin:0 auto, it
+      // centers when the parent has room, and falls back to flush-left when the
+      // bracket is wider than the viewport (mobile) — the previous
+      // justifyContent:'center' approach left the leftmost columns unreachable
+      // because browsers can't scroll into negative left-overflow.
+      const row = div({style:{display:'flex',alignItems:'center',width:'max-content',minWidth:'980px',margin:'0 auto',padding:'4px 0'}});
 
       const BL = {r32:[74,76,73,75,78,77,81,82], r16:[89,90,91,92], qf:[97,99]};
       const BR = {r32:[83,84,85,87,80,86,88,79], r16:[93,94,95,96], qf:[98,100]};
