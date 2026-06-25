@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.8.2';
+const APP_VERSION = 'v0.9.0';
 const BUILD_DATE = '2026-06-23';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -199,6 +199,10 @@ const VALID_TABS = ['schedule', 'groups', 'bracket', 'teams'];
 const $tab = persistedStore('wc2026:tab', 'schedule', v => VALID_TABS.includes(v));
 const $selectedTeam = persistedStore('wc2026:selectedTeam', null,
   v => v === null || typeof v === 'string');
+// Schedule view: keep completed matches hidden by default but remember the
+// user's preference if they expand them. Most-used page → less scroll matters.
+const $showCompleted = persistedStore('wc2026:showCompleted', false,
+  v => typeof v === 'boolean');
 
 // Helper: switch to the Teams tab and open a team's detail page. Used by all
 // the team-name elements scattered through the bracket (slot rows, candidate
@@ -1474,42 +1478,105 @@ function buildScheduleView() {
   function renderList() {
     container.innerHTML = '';
     const lower = tf.toLowerCase();
-    const byDate = {};
-    all.filter(e=>{
-      if(sf!=='all'&&e.stage!==sf)return false;
-      if(lower&&!e.home.toLowerCase().includes(lower)&&!e.away.toLowerCase().includes(lower))return false;
-      return true;
-    }).forEach(e=>{const d=e.date||'TBD';if(!byDate[d])byDate[d]=[];byDate[d].push(e);});
 
-    const sortedDates = Object.keys(byDate).sort((a,b)=>{
-      if(a===todayISO) return -1;
-      if(b===todayISO) return 1;
-      const aFuture = a>=todayISO, bFuture = b>=todayISO;
-      if(aFuture&&bFuture) return a.localeCompare(b);
-      if(!aFuture&&!bFuture) return b.localeCompare(a);
-      return aFuture?-1:1;
+    // Filter by stage/search, then partition into three buckets.
+    const filtered = all.filter(e => {
+      if (sf !== 'all' && e.stage !== sf) return false;
+      if (lower && !e.home.toLowerCase().includes(lower) && !e.away.toLowerCase().includes(lower)) return false;
+      return e.date; // drop TBD-date entries from the schedule list
     });
 
-    sortedDates.forEach((date)=>{
-      // Sort by kickoff time so earliest games appear first within a day.
-      const entries = byDate[date].slice().sort((a,b) => timeToMin(a.time) - timeToMin(b.time));
-      const isToday = date===todayISO;
-      const d = new Date(date+'T12:00:00');
-      const isPast = date<todayISO;
-      const dayDiv = div({id:isToday?'today-anchor':undefined,style:{marginBottom:'20px',scrollMarginTop:'16px'}},
-        div({style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}},
-          div({style:{flex:1,height:'1px',background:isToday?'rgba(217,119,6,0.3)':isPast?'rgba(255,255,255,0.04)':'rgba(255,255,255,0.07)'}}),
-          span({style:{fontSize:'11px',fontWeight:'600',color:isToday?'#fbbf24':isPast?'#374151':'#9ca3af',flexShrink:0,whiteSpace:'nowrap'}},
-            ...(isToday?[span({style:{marginRight:'4px'}},'★ TODAY — ')]:[]),
-            d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})
-          ),
-          SL[entries[0].stage]&&span({style:{fontSize:'11px',color:'#374151',flexShrink:0}},SL[entries[0].stage]),
-          div({style:{flex:1,height:'1px',background:isToday?'rgba(217,119,6,0.3)':isPast?'rgba(255,255,255,0.04)':'rgba(255,255,255,0.07)'}})
+    const today = [], upcoming = [], completed = [];
+    filtered.forEach(e => {
+      if (e.date === todayISO) today.push(e);
+      else if (e.date > todayISO) upcoming.push(e);
+      else completed.push(e);
+    });
+
+    // Today: earliest kickoff first. Upcoming: chronological. Completed: reverse-chronological (newest past first).
+    today.sort((a,b) => timeToMin(a.time) - timeToMin(b.time));
+    upcoming.sort((a,b) => a.date !== b.date ? a.date.localeCompare(b.date) : timeToMin(a.time) - timeToMin(b.time));
+    completed.sort((a,b) => a.date !== b.date ? b.date.localeCompare(a.date) : timeToMin(b.time) - timeToMin(a.time));
+
+    function fmtDate(iso) {
+      return new Date(iso+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    }
+    // Section with a sticky day header that pins to the top of the viewport
+    // while you scroll. Top: 0 is fine — none of the ancestors set
+    // overflow:hidden/auto, and the app header isn't sticky so it just
+    // scrolls away naturally.
+    function daySection(label, entries, opts={}) {
+      const stage = SL[entries[0].stage];
+      return div({style:{marginBottom:'18px'},id:opts.id||undefined},
+        div({style:{position:'sticky',top:'0',zIndex:5,
+          background:'rgba(10,15,30,0.94)',backdropFilter:'blur(8px)',
+          padding:'10px 4px 7px',marginBottom:'4px',
+          display:'flex',alignItems:'center',gap:'10px',
+          borderBottom:'1px solid '+(opts.isToday?'rgba(217,119,6,0.35)':'rgba(255,255,255,0.07)')
+        }},
+          span({style:{fontSize:'12px',fontWeight:'700',
+            color:opts.isToday?'#fbbf24':'#cbd5e1',
+            letterSpacing:'0.04em',whiteSpace:'nowrap',flexShrink:0}}, label),
+          div({style:{flex:1}}),
+          stage && span({style:{fontSize:'10px',color:'#4b5563',flexShrink:0}}, stage)
         ),
-        ...entries.map(e=>matchCard(e,todayISO,e.stage==='group'))
+        ...entries.map(e => matchCard(e, todayISO, e.stage === 'group'))
       );
-      container.appendChild(dayDiv);
+    }
+
+    // ── TODAY ──
+    if (today.length) {
+      container.appendChild(daySection('★ TODAY · ' + fmtDate(todayISO), today, {isToday:true, id:'today-anchor'}));
+    }
+
+    // ── UPCOMING ── group by date, ascending
+    const upcomingByDate = {};
+    upcoming.forEach(e => { (upcomingByDate[e.date] = upcomingByDate[e.date] || []).push(e); });
+    Object.keys(upcomingByDate).sort().forEach(date => {
+      container.appendChild(daySection(fmtDate(date), upcomingByDate[date]));
     });
+
+    // ── COMPLETED ── collapsible block, default hidden. Toggle persisted.
+    if (completed.length) {
+      const completedByDate = {};
+      completed.forEach(e => { (completedByDate[e.date] = completedByDate[e.date] || []).push(e); });
+      const completedDates = Object.keys(completedByDate).sort((a,b) => b.localeCompare(a));
+
+      const wrap = div({style:{display:$showCompleted.get()?'block':'none',marginTop:'4px'}});
+      completedDates.forEach(date => {
+        wrap.appendChild(daySection(fmtDate(date), completedByDate[date]));
+      });
+
+      const toggle = btn({style:{
+        display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',
+        width:'100%',padding:'10px 14px',marginTop:'20px',
+        borderRadius:'8px',
+        background:'rgba(255,255,255,0.04)',
+        border:'1px solid rgba(255,255,255,0.08)',
+        color:'#9ca3af',fontSize:'12px',fontWeight:'600',cursor:'pointer',fontFamily:'inherit'
+      }});
+      function refreshToggle() {
+        const exp = $showCompleted.get();
+        toggle.innerHTML = '';
+        toggle.appendChild(span({style:{color:'#6b7280',marginRight:'2px'}}, exp ? '▾' : '▸'));
+        toggle.appendChild(span({}, (exp ? 'Hide ' : 'View ') + completed.length + ' completed match' + (completed.length===1?'':'es')));
+      }
+      refreshToggle();
+      toggle.onclick = function() {
+        $showCompleted.set(!$showCompleted.get());
+        wrap.style.display = $showCompleted.get() ? 'block' : 'none';
+        refreshToggle();
+      };
+      container.appendChild(toggle);
+      container.appendChild(wrap);
+    }
+
+    // Empty state
+    if (!today.length && !upcoming.length && !completed.length) {
+      container.appendChild(div({style:{padding:'40px 20px',textAlign:'center',color:'#6b7280',fontSize:'13px'}},
+        'No matches found' + (tf ? ' for "'+tf+'"' : '') + '.'
+      ));
+    }
   }
 
   const searchEl = inp({type:'text',placeholder:'Filter by team…',value:'',oninput:function(e){tf=e.target.value;renderList();},style:{width:'100%',padding:'7px 12px',borderRadius:'6px',background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',color:'#e2e8f0',fontSize:'14px',outline:'none',display:'block',marginBottom:'12px'}});
