@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.7.3';
+const APP_VERSION = 'v0.8.0';
 const BUILD_DATE = '2026-06-23';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -99,6 +99,41 @@ const FLAG = {Argentina:"🇦🇷",Spain:"🇪🇸",France:"🇫🇷",England:"�
 
 const GROUPS = {A:["Mexico","South Africa","South Korea","Czech Republic"],B:["Canada","Bosnia and Herzegovina","Qatar","Switzerland"],C:["Brazil","Morocco","Haiti","Scotland"],D:["USA","Paraguay","Australia","Turkey"],E:["Germany","Curaçao","Ivory Coast","Ecuador"],F:["Netherlands","Japan","Sweden","Tunisia"],G:["Belgium","Egypt","Iran","New Zealand"],H:["Spain","Cape Verde","Saudi Arabia","Uruguay"],I:["France","Senegal","Iraq","Norway"],J:["Argentina","Algeria","Austria","Jordan"],K:["Portugal","DR Congo","Uzbekistan","Colombia"],L:["England","Croatia","Ghana","Panama"]};
 
+// ─── PLAYER RANKINGS ─────────────────────────────────────────────────────────
+// Hardcoded ranking of recognizable stars. Anchored to Ballon d'Or 2024 final
+// order (top 1-25, retirees skipped) plus a tail of well-known 2026 WC players
+// not in that list. Name lookup is normalized (diacritics stripped, lowercase,
+// alphanumeric only) so matching is forgiving across openfootball name forms.
+const _RAW_PLAYER_RANKS = [
+  // Ballon d'Or 2024 top 25 (excluding international retirees like Kroos/Hummels)
+  [1, 'Rodri'], [2, 'Vinícius Júnior'], [3, 'Jude Bellingham'], [4, 'Dani Carvajal'],
+  [5, 'Erling Haaland'], [6, 'Kylian Mbappé'], [7, 'Lautaro Martínez'], [8, 'Lamine Yamal'],
+  [10, 'Harry Kane'], [11, 'Federico Valverde'], [12, 'Cole Palmer'], [13, 'Florian Wirtz'],
+  [14, 'Bukayo Saka'], [15, 'Granit Xhaka'], [16, 'Phil Foden'], [17, 'Emiliano Martínez'],
+  [18, 'Antonio Rüdiger'], [19, 'William Saliba'], [20, 'Hakan Çalhanoğlu'], [21, 'Vitinha'],
+  [22, 'Declan Rice'], [23, 'Nico Williams'], [24, 'Dani Olmo'], [25, 'Mikel Merino'],
+  // Tier 2 — major 2026 WC names beyond top 25
+  [31, 'Lionel Messi'], [32, 'Mohamed Salah'], [33, 'Kevin De Bruyne'],
+  [34, 'Heung-Min Son'], [34, 'Son Heung-min'], [35, 'Pedri'], [36, 'Rodrygo'], [37, 'Raphinha'],
+  [38, 'Casemiro'], [39, 'Marquinhos'], [40, 'Achraf Hakimi'],
+  [41, 'Christian Pulisic'], [42, 'Folarin Balogun'], [43, 'Antonee Robinson'],
+  [44, 'Bruno Fernandes'], [45, 'Bernardo Silva'], [46, 'Rúben Dias'],
+  [47, 'Joshua Kimmich'], [48, 'Jamal Musiala'], [49, 'Ousmane Dembélé'],
+  [50, 'Antoine Griezmann'],
+  // Additional 2026 WC names verified present in openfootball squads
+  [51, 'Neymar'], [52, 'Gavi'], [53, 'Aurélien Tchouaméni'], [54, 'Marcus Thuram'],
+  [55, 'Bruno Guimarães'], [56, 'Marcus Rashford'], [57, 'Kobbie Mainoo'],
+  [58, 'Endrick'], [59, 'Lucas Paquetá'], [60, 'Ferran Torres'],
+  [61, 'Michael Olise'], [62, 'Matheus Cunha'], [63, 'Gabriel Martinelli'],
+  [64, 'Mikel Oyarzabal'], [65, 'Eberechi Eze'],
+];
+function _normName(s) {
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+}
+const PLAYER_RANK = {};
+_RAW_PLAYER_RANKS.forEach(([r, n]) => { PLAYER_RANK[_normName(n)] = r; });
+function getPlayerRank(name) { return PLAYER_RANK[_normName(name)] || null; }
+
 const LEAGUES=["Premier League","La Liga","Bundesliga","Ligue 1","Serie A","Primeira Liga","Eredivisie","Saudi Pro League","MLS","Süper Lig","Scottish Prem","Other"];
 const LC={"Premier League":"#4c1d95","La Liga":"#991b1b","Bundesliga":"#92400e","Ligue 1":"#1e3a5f","Serie A":"#14532d","Primeira Liga":"#065f46","Eredivisie":"#6d28d9","Saudi Pro League":"#78350f","MLS":"#1d4ed8","Süper Lig":"#be123c","Scottish Prem":"#1e40af","Other":"#292524"};
 
@@ -157,6 +192,16 @@ function navigateToTeam(teamName) {
   if (!teamName || teamName === 'TBD') return;
   $selectedTeam.set(teamName);
   $tab.set('teams');
+}
+
+// Wrap an element so clicking it navigates to that team's detail page.
+// Uses stopPropagation so it works inside parent rows that have their own
+// onclick (e.g. matchCard rows that toggle squad panels).
+function clickableTeam(el, teamName) {
+  if (!teamName || teamName === 'TBD' || !FLAG[teamName]) return el;
+  el.style.cursor = 'pointer';
+  el.addEventListener('click', (e) => { e.stopPropagation(); navigateToTeam(teamName); });
+  return el;
 }
 const $data   = createStore(null);
 const $status = createStore("loading");
@@ -324,11 +369,17 @@ function squadPanel(team) {
           span({style:{fontSize:'10px',fontWeight:600,color:LC[lg]==='#292524'?'#6b7280':LC[lg]}},lg+' ('+lp.length+')')
         ),
         div({style:{display:'flex',flexWrap:'wrap'}},
-          ...lp.map(p=>span({style:{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 6px',borderRadius:'4px',fontSize:'11px',marginRight:'3px',marginBottom:'3px',background:LC[p.league]+'28',color:'#cbd5e1',border:'1px solid '+LC[p.league]+'44'},title:p.club},
-            span({style:{opacity:'0.4',fontSize:'9px'}},p.pos),
-            p.name,
-            span({style:{opacity:'0.3',fontSize:'9px'}},' '+p.club)
-          ))
+          ...lp.map(p=>{
+            const rank = getPlayerRank(p.name);
+            // Gold for top-10, blue for 11-30, gray for 31-50. Skipped when unranked.
+            const rankColor = rank ? (rank <= 10 ? '#fbbf24' : rank <= 30 ? '#60a5fa' : '#9ca3af') : null;
+            return span({style:{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 6px',borderRadius:'4px',fontSize:'11px',marginRight:'3px',marginBottom:'3px',background:LC[p.league]+'28',color:'#cbd5e1',border:'1px solid '+LC[p.league]+'44'},title:p.club+(rank?' · Ranked #'+rank:'')},
+              rank && span({style:{fontSize:'8px',fontWeight:'700',color:rankColor,background:rankColor+'22',padding:'1px 3px',borderRadius:'3px',fontFamily:'monospace',flexShrink:0}}, '#'+rank),
+              span({style:{opacity:'0.4',fontSize:'9px'}},p.pos),
+              p.name,
+              span({style:{opacity:'0.3',fontSize:'9px'}},' '+p.club)
+            );
+          })
         )
       );
     }).filter(Boolean)
@@ -416,21 +467,21 @@ function matchCard(entry, todayISO, showSquads=true) {
         )
       ),
       div({style:{display:'flex',alignItems:'center',gap:'8px',padding:'10px 12px'}},
-        div({style:{flex:1,display:'flex',alignItems:'center',gap:'8px',minWidth:0}},
+        clickableTeam(div({style:{flex:1,display:'flex',alignItems:'center',gap:'8px',minWidth:0}},
           span({style:{fontSize:'22px',flexShrink:0}},FLAG[home]||'🏳'),
           div({style:{minWidth:0}},
             div({style:{fontSize:'14px',fontWeight:hWon?'700':'500',color:hWon?'#fff':'#e2e8f0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},home),
             r1&&div({style:{fontSize:'10px',color:'#6b7280'}},'FIFA #'+r1)
           )
-        ),
+        ), home),
         div({style:{fontSize:'11px',fontWeight:'700',color:'#4b5563',padding:'0 4px'}},'VS'),
-        div({style:{flex:1,display:'flex',alignItems:'center',gap:'8px',minWidth:0,justifyContent:'flex-end'}},
+        clickableTeam(div({style:{flex:1,display:'flex',alignItems:'center',gap:'8px',minWidth:0,justifyContent:'flex-end'}},
           div({style:{minWidth:0,textAlign:'right'}},
             div({style:{fontSize:'14px',fontWeight:aWon?'700':'500',color:aWon?'#fff':'#e2e8f0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},away),
             r2&&div({style:{fontSize:'10px',color:'#6b7280'}},'FIFA #'+r2)
           ),
           span({style:{fontSize:'22px',flexShrink:0}},FLAG[away]||'🏳')
-        )
+        ), away)
       )
     )
   );
@@ -447,11 +498,11 @@ function standingsTable(gk, byKey) {
     ),
     ...rows.map((r,i)=>div({style:{display:'grid',gridTemplateColumns:cols,alignItems:'center',padding:'7px 10px',borderTop:'1px solid rgba(255,255,255,0.05)',fontSize:'12px',background:i<2?'rgba(59,130,246,0.06)':i===2?'rgba(251,191,36,0.04)':'transparent'}},
       span({style:{fontFamily:'monospace',color:'#4b5563'}},i+1),
-      div({style:{display:'flex',alignItems:'center',gap:'4px',minWidth:0}},
+      clickableTeam(div({style:{display:'flex',alignItems:'center',gap:'4px',minWidth:0}},
         div({style:{width:'3px',height:'14px',borderRadius:'2px',background:i<2?'#3b82f6':i===2?'#f59e0b':'transparent',flexShrink:0}}),
         span({style:{fontSize:'15px',flexShrink:0}},FLAG[r.team]||'🏳'),
         span({style:{color:'#e2e8f0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},r.team)
-      ),
+      ), r.team),
       span({style:{textAlign:'center',color:'#6b7280'}},r.mp),
       span({style:{textAlign:'center',color:'#4ade80'}},r.w),
       span({style:{textAlign:'center',color:'#6b7280'}},r.d),
@@ -1284,7 +1335,7 @@ function buildBracketView() {
       const thirdsGrid = div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px',marginBottom:'8px'}});
       proj.thirds.slice(0,9).forEach((t,i) => {
         if(!t.team) return;
-        thirdsGrid.appendChild(div({style:{display:'flex',alignItems:'center',gap:'6px',padding:'5px 8px',borderRadius:'6px',background:i<8?'rgba(59,130,246,0.06)':'rgba(239,68,68,0.06)',border:i<8?'1px solid rgba(59,130,246,0.15)':'1px solid rgba(239,68,68,0.15)'}},
+        thirdsGrid.appendChild(clickableTeam(div({style:{display:'flex',alignItems:'center',gap:'6px',padding:'5px 8px',borderRadius:'6px',background:i<8?'rgba(59,130,246,0.06)':'rgba(239,68,68,0.06)',border:i<8?'1px solid rgba(59,130,246,0.15)':'1px solid rgba(239,68,68,0.15)'}},
           span({style:{fontSize:'12px',color:i<8?'#9ca3af':'#6b7280',fontFamily:'monospace',minWidth:'16px'}},i+1),
           span({style:{fontSize:'14px'}},FLAG[t.team]||'🏳'),
           div({style:{minWidth:0}},
@@ -1293,7 +1344,7 @@ function buildBracketView() {
           ),
           i===7&&span({style:{fontSize:'9px',color:'#4ade80',marginLeft:'auto',flexShrink:0}},'✓ in'),
           i===8&&span({style:{fontSize:'9px',color:'#f87171',marginLeft:'auto',flexShrink:0}},'✗ out')
-        ));
+        ), t.team));
       });
       content.appendChild(thirdsGrid);
     }
