@@ -361,30 +361,124 @@ setInterval(loadESPN, 60000);
 
 // ─── ESPN PER-MATCH DETAIL (subs, cards) ─────────────────────────────────────
 // Lazy fetch. Goals already come from openfootball; this adds subs + cards.
-// Parser is defensive — ESPN field names may vary across matches.
+// ESPN's `athletesInvolved` items often only carry IDs/$refs without inline
+// names. We work around this by (a) building an athlete-id→name map from
+// boxscore.players and (b) parsing the event's English `text` field as a
+// final fallback. Set window.__WC_DEBUG=true in DevTools to log raw events.
+function buildAthleteMap(j){
+  const map = {};
+  const addAthlete = (a)=>{
+    if(!a) return;
+    const id = a.id || a.uid || (a.athlete && (a.athlete.id||a.athlete.uid));
+    const name = a.displayName || a.fullName || a.shortName || a.name
+              || (a.firstName && a.lastName && (a.firstName+' '+a.lastName))
+              || a.lastName
+              || (a.athlete && (a.athlete.displayName||a.athlete.fullName||a.athlete.shortName));
+    if (id && name) map[String(id)] = name;
+  };
+  const teams = (j && j.boxscore && j.boxscore.players) || [];
+  teams.forEach(t=>{
+    const groups = t.statistics || t.players || [];
+    groups.forEach(g=>{
+      const arr = g.athletes || g.players || [];
+      arr.forEach(p=>{ addAthlete(p.athlete||p); });
+    });
+  });
+  // Also try rosters[] which some endpoints provide
+  const rosters = (j && j.rosters) || [];
+  rosters.forEach(r=>{
+    (r.roster||r.athletes||[]).forEach(p=>addAthlete(p.athlete||p));
+  });
+  return map;
+}
+
+function athleteNameFromInvolved(a, athleteMap){
+  if(!a) return '';
+  const direct = a.displayName || a.fullName || a.shortName || a.name
+              || (a.firstName && a.lastName && (a.firstName+' '+a.lastName))
+              || a.lastName
+              || (a.athlete && (a.athlete.displayName||a.athlete.fullName||a.athlete.shortName));
+  if (direct) return direct;
+  const id = a.id || a.uid || (a.athlete && (a.athlete.id||a.athlete.uid));
+  if (id && athleteMap[String(id)]) return athleteMap[String(id)];
+  // Try to extract id from $ref URL like .../athletes/12345?...
+  const ref = a.$ref || (a.athlete && a.athlete.$ref) || '';
+  const m = ref.match(/\/athletes\/(\d+)/);
+  if (m && athleteMap[m[1]]) return athleteMap[m[1]];
+  return '';
+}
+
+// Fallback: parse the event's English text field.
+// "Substitution, Curaçao. Player A replaces Player B."
+// "Yellow Card, Player Name (Team)."
+// "Goal! Player Name (Country) ..."
+function parseEventText(text, evType){
+  if(!text) return null;
+  const t = evType.toLowerCase();
+  if (t.includes('sub')) {
+    // Try "X replaces Y"
+    const m = text.match(/^(?:Substitution[,.]?\s*[^.]*?\.?\s*)?(.+?)\s+replaces\s+(.+?)[.\s]*$/i);
+    if (m) return {playerIn: m[1].trim(), playerOut: m[2].trim()};
+    // Try "X comes on for Y"
+    const m2 = text.match(/(.+?)\s+comes on for\s+(.+?)[.\s]*$/i);
+    if (m2) return {playerIn: m2[1].trim(), playerOut: m2[2].trim()};
+    return null;
+  }
+  if (t.includes('card')) {
+    // "Yellow Card, Player Name (Team)." or "Yellow Card — Player Name"
+    const m = text.match(/(?:Yellow Card|Red Card|Yellow-Red Card)[,.\s—-]+([^(.]+?)(?:\s*\(|[.]|$)/i);
+    if (m) return {player: m[1].trim()};
+    return null;
+  }
+  return null;
+}
+
 function parseEspnSummary(j){
   const subs=[]; const cards=[];
+  const athleteMap = buildAthleteMap(j);
   const events = (j && (j.keyEvents || j.scoringPlays)) || [];
+  // One-shot dump of the first response so we can see what shape we're getting.
+  // Override with window.__WC_DEBUG=false to silence.
+  if (typeof window !== 'undefined' && !window.__WC_ESPN_DUMPED && window.__WC_DEBUG !== false) {
+    window.__WC_ESPN_DUMPED = true;
+    console.log('[WC ESPN dump] athleteMap keys:', Object.keys(athleteMap).length, 'sample:', Object.entries(athleteMap).slice(0,3));
+    console.log('[WC ESPN dump] keyEvents[0]:', events[0]);
+    console.log('[WC ESPN dump] rosters:', j && j.rosters);
+    console.log('[WC ESPN dump] boxscore keys:', j && j.boxscore && Object.keys(j.boxscore));
+    console.log('[WC ESPN dump] full response:', j);
+  }
+  const debug = typeof window !== 'undefined' && window.__WC_DEBUG;
   events.forEach(ev=>{
     const t = ((ev.type && ev.type.text) || ev.text || '').toLowerCase();
     const minute = (ev.clock && ev.clock.displayValue) || ev.minute || '';
     const teamName = (ev.team && (ev.team.displayName || ev.team.name)) || '';
     const teamShort = (ev.team && (ev.team.abbreviation || ev.team.shortDisplayName)) || teamName;
-    const athletes = (ev.athletesInvolved || ev.athletes || []).map(a=>({
-      name: a.displayName || a.fullName || a.shortName || a.name || '',
-      jersey: a.jersey || ''
-    }));
+    const involved = ev.athletesInvolved || ev.athletes || ev.participants || [];
+    let names = involved.map(a=>athleteNameFromInvolved(a, athleteMap));
+    if (debug) console.debug('[WC keyEvent]', {type: ev.type, text: ev.text, athletesInvolved: involved, resolved: names, raw: ev});
+
     if (t.includes('substitution') || t === 'sub' || t.includes('sub ')) {
-      // Convention used by ESPN soccer: athletes[0] = in, athletes[1] = out
-      subs.push({minute, team: teamName, teamShort,
-        playerIn: (athletes[0]&&athletes[0].name)||'',
-        playerOut: (athletes[1]&&athletes[1].name)||''});
+      let playerIn = names[0] || '';
+      let playerOut = names[1] || '';
+      if (!playerIn || !playerOut) {
+        const parsed = parseEventText(ev.text || ev.shortText || '', 'sub');
+        if (parsed) { playerIn = playerIn || parsed.playerIn; playerOut = playerOut || parsed.playerOut; }
+      }
+      subs.push({minute, team: teamName, teamShort, playerIn, playerOut});
     } else if (t.includes('yellow card') || t.includes('yellow-red') || t === 'yellow') {
-      cards.push({minute, team: teamName, teamShort,
-        player: (athletes[0]&&athletes[0].name)||'', type: t.includes('yellow-red')?'yellowred':'yellow'});
+      let player = names[0] || '';
+      if (!player) {
+        const parsed = parseEventText(ev.text || ev.shortText || '', 'card');
+        if (parsed) player = parsed.player;
+      }
+      cards.push({minute, team: teamName, teamShort, player, type: t.includes('yellow-red')?'yellowred':'yellow'});
     } else if (t.includes('red card') || t === 'red') {
-      cards.push({minute, team: teamName, teamShort,
-        player: (athletes[0]&&athletes[0].name)||'', type: 'red'});
+      let player = names[0] || '';
+      if (!player) {
+        const parsed = parseEventText(ev.text || ev.shortText || '', 'card');
+        if (parsed) player = parsed.player;
+      }
+      cards.push({minute, team: teamName, teamShort, player, type: 'red'});
     }
   });
   return {subs, cards};
