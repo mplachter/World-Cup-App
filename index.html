@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.8.1';
+const APP_VERSION = 'v0.8.2';
 const BUILD_DATE = '2026-06-23';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -173,6 +173,21 @@ function localTime(t){
   const utcH=parseInt(m[1])-parseInt(m[3]);
   const utcMs=Date.UTC(2026,5,15,utcH,parseInt(m[2]));
   return new Date(utcMs).toLocaleTimeString([],{hour:'numeric',minute:'2-digit',hour12:true});
+}
+// Minutes-since-midnight from a 12h ('7:00 PM') or 24h ('19:00') string.
+// Needed because string-sorting localTime output puts '10:00 PM' before
+// '4:00 PM' lexicographically. Empty/unparseable returns Infinity so blanks
+// sort last.
+function timeToMin(s){
+  if(!s)return Infinity;
+  const m=s.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+  if(!m)return Infinity;
+  let h=parseInt(m[1],10);
+  const min=parseInt(m[2],10);
+  const p=(m[3]||'').toUpperCase();
+  if(p==='PM'&&h!==12)h+=12;
+  else if(p==='AM'&&h===12)h=0;
+  return h*60+min;
 }
 function processRaw(json){const byKey={},byNum={},all=[];(json.matches||[]).forEach(m=>{const h=norm(m.team1),a=norm(m.team2);const e={home:h,away:a,score:m.score&&m.score.ft?m.score.ft[0]+"-"+m.score.ft[1]:null,ht:m.score&&m.score.ht?m.score.ht[0]+"-"+m.score.ht[1]:null,goals1:m.goals1||[],goals2:m.goals2||[],date:m.date,time:localTime(m.time),ground:m.ground,stage:stageOf(m.round),round:m.round,num:m.num||null};byKey[pkey(h,a)]=e;if(m.num)byNum[m.num]=e;all.push(e);});return{byKey,byNum,all};}
 
@@ -1476,7 +1491,8 @@ function buildScheduleView() {
     });
 
     sortedDates.forEach((date)=>{
-      const entries = byDate[date];
+      // Sort by kickoff time so earliest games appear first within a day.
+      const entries = byDate[date].slice().sort((a,b) => timeToMin(a.time) - timeToMin(b.time));
       const isToday = date===todayISO;
       const d = new Date(date+'T12:00:00');
       const isPast = date<todayISO;
@@ -1803,6 +1819,12 @@ function buildApp(){
   $data.sub(renderContent);
   $espn.sub(renderContent);
   $squads.sub(renderContent);
+  // navigateToTeam() flips $tab to 'teams'. Without a subscriber here, the
+  // store changes but nothing re-renders — the user would have to manually
+  // click the Teams tab to see the detail view. Subscribing fixes that and
+  // also means the inline renderContent() calls below could be omitted, but
+  // we leave them in for the same-tab case (no-op via the store re-fire).
+  $tab.sub(renderContent);
   // Lightweight status-bar refresh — reach into the inner wrapper, replace
   // only the first child (the status bar) so we don't rebuild the whole view.
   function refreshStatusBar() {
