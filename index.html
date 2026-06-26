@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.11.3';
+const APP_VERSION = 'v0.11.4';
 const BUILD_DATE = '2026-06-25';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -2286,7 +2286,6 @@ function buildTeamListView(){
           span({style:{fontSize:'13px',fontWeight:'500',color:'#e2e8f0',width:'130px',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},team),
           grp&&span({style:{fontSize:'10px',color:'#6b7280',background:'rgba(255,255,255,0.05)',padding:'1px 5px',borderRadius:'3px',flexShrink:0}},'Grp '+grp),
           barWrap,
-          sq&&span({style:{fontSize:'11px',color:'#4b5563',flexShrink:0,marginLeft:'4px'}},sq.length),
           span({style:{fontSize:'10px',color:'#4b5563',flexShrink:0,marginLeft:'4px'}},'›')
         )
       );
