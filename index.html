@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.10.3';
+const APP_VERSION = 'v0.10.4';
 const BUILD_DATE = '2026-06-25';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -707,10 +707,20 @@ function matchCard(entry, todayISO, showSquads=true) {
     }
     // Group by team for two-column layout consistent with goals
     function teamSide(name){
-      // ESPN team names may differ from openfootball names; use loose match
-      const n = (name||'').toLowerCase();
-      if (n.includes((home||'').toLowerCase()) || (home||'').toLowerCase().includes(n)) return 'home';
-      if (n.includes((away||'').toLowerCase()) || (away||'').toLowerCase().includes(n)) return 'away';
+      // ESPN team names like "Türkiye" or "United States" need normalization
+      // before comparing — substring matching against openfootball's "Turkey"/"USA"
+      // returns false negatives ("United States" doesn't contain "USA"), so we
+      // canonicalize through espnNorm → norm and compare exactly.
+      if (!name) return 'home';
+      const canonical = norm(espnNorm(name));
+      const homeC = norm(home||'');
+      const awayC = norm(away||'');
+      if (canonical === homeC) return 'home';
+      if (canonical === awayC) return 'away';
+      // Fallback: loose substring match for unknown variants
+      const n = name.toLowerCase();
+      if (n.includes(homeC.toLowerCase()) || homeC.toLowerCase().includes(n)) return 'home';
+      if (n.includes(awayC.toLowerCase()) || awayC.toLowerCase().includes(n)) return 'away';
       return 'home';
     }
     if (showEspnGoals) {
