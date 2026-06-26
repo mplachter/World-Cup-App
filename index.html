@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.10.1';
+const APP_VERSION = 'v0.10.2';
 const BUILD_DATE = '2026-06-25';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -1886,8 +1886,22 @@ function buildScheduleView() {
       else completed.push(e);
     });
 
-    // Today: earliest kickoff first. Upcoming: chronological. Completed: reverse-chronological (newest past first).
-    today.sort((a,b) => timeToMin(a.time) - timeToMin(b.time));
+    // Today: pin LIVE games to the top, then UPCOMING (by kickoff), then COMPLETED (most-recent finish first).
+    // This matches how sports apps order today's slate — live is the most actionable bucket.
+    function todayPriority(e) {
+      const ek = $espn.get()[pkey(e.home, e.away)];
+      if (ek && ek.isLive) return 0;
+      const played = (ek && ek.isPost) || !!e.score;
+      if (!played) return 1;
+      return 2;
+    }
+    today.sort((a,b) => {
+      const pa = todayPriority(a), pb = todayPriority(b);
+      if (pa !== pb) return pa - pb;
+      // Within same bucket: live + upcoming → earliest kickoff first; completed → latest first
+      const cmpAsc = timeToMin(a.time) - timeToMin(b.time);
+      return pa === 2 ? -cmpAsc : cmpAsc;
+    });
     upcoming.sort((a,b) => a.date !== b.date ? a.date.localeCompare(b.date) : timeToMin(a.time) - timeToMin(b.time));
     completed.sort((a,b) => a.date !== b.date ? b.date.localeCompare(a.date) : timeToMin(b.time) - timeToMin(a.time));
 
