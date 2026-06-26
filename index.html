@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.11.2';
+const APP_VERSION = 'v0.11.3';
 const BUILD_DATE = '2026-06-25';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -1803,19 +1803,31 @@ function buildBracketView() {
             let suffix = null;
             if (sibNum) {
               const sibSlots = getSlots(sibNum);
-              const sH = sibSlots.home, sA = sibSlots.away;
-              const hLocked = sH && sH.confidence === 'confirmed' && sH.team && sH.team !== 'TBD';
-              const aLocked = sA && sA.confidence === 'confirmed' && sA.team && sA.team !== 'TBD';
+              // Match the same "looks locked" heuristic projSlotEl uses: either
+              // confidence is confirmed (openfootball updated / math-locked), or
+              // sim shows a dominant candidate (≥90% or all others <10%).
+              function effectiveTeam(slot) {
+                if (!slot) return null;
+                if (slot.confidence === 'confirmed' && slot.team && slot.team !== 'TBD') return slot.team;
+                if (slot.candidates && slot.candidates.length) {
+                  const top = slot.candidates[0];
+                  const dominant = top.pct >= 0.9 || slot.candidates.slice(1).every(c => c.pct < 0.1);
+                  if (dominant) return top.team;
+                }
+                return null;
+              }
+              const hTeam = effectiveTeam(sibSlots.home);
+              const aTeam = effectiveTeam(sibSlots.away);
               function flagged(name) {
                 const f = FLAG[name];
                 return f ? (f + ' ' + name) : name;
               }
-              if (hLocked && aLocked) {
-                suffix = span({style:{color:'#94a3b8'}}, ' · winner faces ', flagged(sH.team), ' / ', flagged(sA.team));
-              } else if (hLocked) {
-                suffix = span({style:{color:'#94a3b8'}}, ' · winner faces ', flagged(sH.team), span({style:{color:'#4b5563'}}, ' or M'+sibNum+' away winner'));
-              } else if (aLocked) {
-                suffix = span({style:{color:'#94a3b8'}}, ' · winner faces ', flagged(sA.team), span({style:{color:'#4b5563'}}, ' or M'+sibNum+' home winner'));
+              if (hTeam && aTeam) {
+                suffix = span({style:{color:'#94a3b8'}}, ' · winner faces ', flagged(hTeam), ' / ', flagged(aTeam));
+              } else if (hTeam) {
+                suffix = span({style:{color:'#94a3b8'}}, ' · winner faces ', flagged(hTeam), span({style:{color:'#4b5563'}}, ' or M'+sibNum+' away winner'));
+              } else if (aTeam) {
+                suffix = span({style:{color:'#94a3b8'}}, ' · winner faces ', flagged(aTeam), span({style:{color:'#4b5563'}}, ' or M'+sibNum+' home winner'));
               } else {
                 suffix = span({style:{color:'#4b5563'}}, ' · winner faces M'+sibNum+' winner');
               }
