@@ -22,8 +22,8 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.11.4';
-const BUILD_DATE = '2026-06-25';
+const APP_VERSION = 'v0.12.0';
+const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
 const _subs = new Map();
@@ -59,6 +59,78 @@ function persistedStore(key, defaultValue, validate) {
   });
   return store;
 }
+
+// persistedCache(prefix, opts) — keyed cache backed by localStorage.
+// Entries stored as JSON: { v: value, ts: writeTime, exp: expireTime|0 }.
+// On QuotaExceededError, evicts oldest 20% of entries in this prefix and retries.
+// gc() on init removes expired entries to keep the store tidy.
+function persistedCache(prefix, opts) {
+  opts = opts || {};
+  const ttl = opts.ttl || Infinity; // milliseconds
+  const maxEntries = opts.maxEntries || 200;
+  const fullPrefix = prefix + ':';
+  function keyFor(id) { return fullPrefix + id; }
+  function listKeys() {
+    const out = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(fullPrefix)) out.push(k);
+    }
+    return out;
+  }
+  function evictOldest(n) {
+    const items = [];
+    listKeys().forEach(k => {
+      try {
+        const obj = JSON.parse(localStorage.getItem(k));
+        items.push({ k, ts: (obj && obj.ts) || 0 });
+      } catch { localStorage.removeItem(k); }
+    });
+    items.sort((a, b) => a.ts - b.ts);
+    items.slice(0, n).forEach(it => { try { localStorage.removeItem(it.k); } catch {} });
+  }
+  function gc() {
+    listKeys().forEach(k => {
+      try {
+        const obj = JSON.parse(localStorage.getItem(k));
+        if (obj && obj.exp && Date.now() > obj.exp) localStorage.removeItem(k);
+      } catch { localStorage.removeItem(k); }
+    });
+  }
+  gc();
+  return {
+    get(id) {
+      try {
+        const raw = localStorage.getItem(keyFor(id));
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        if (obj.exp && Date.now() > obj.exp) {
+          localStorage.removeItem(keyFor(id));
+          return null;
+        }
+        return obj.v;
+      } catch { return null; }
+    },
+    set(id, value, overrideTtl) {
+      const t = (overrideTtl === undefined) ? ttl : overrideTtl;
+      const obj = { v: value, ts: Date.now(), exp: t === Infinity ? 0 : Date.now() + t };
+      const json = JSON.stringify(obj);
+      try { localStorage.setItem(keyFor(id), json); }
+      catch (e) {
+        if (e && e.name === 'QuotaExceededError') {
+          console.warn('[cache]', prefix, 'quota hit, evicting');
+          evictOldest(Math.ceil(maxEntries * 0.2));
+          try { localStorage.setItem(keyFor(id), json); }
+          catch (e2) { console.warn('[cache]', prefix, 'persist failed after eviction:', e2.message); }
+        }
+      }
+    },
+    del(id) { try { localStorage.removeItem(keyFor(id)); } catch {} },
+    listKeys,
+    size() { return listKeys().length; }
+  };
+}
+
 
 const ce = (tag, attrs, ...children) => {
   const el = document.createElement(tag);
@@ -250,11 +322,26 @@ setInterval(() => {
 const URLS=["https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json","https://cdn.jsdelivr.net/gh/openfootball/worldcup.json@master/2026/worldcup.json"];
 async function loadData(){
   $status.set("loading");
+  // Stale-while-revalidate: serve cached schedule instantly, then revalidate.
+  // The TTL on the cache ensures we don't show truly old data on cold start.
+  const cached = scheduleCache.get('current');
+  if (cached) {
+    $data.set(processRaw(cached));
+    $status.set("done");
+  }
   for(const url of URLS){
-    try{const r=await fetch(url,{cache:"no-cache"});if(!r.ok)throw new Error("HTTP "+r.status);const j=await r.json();$data.set(processRaw(j));$status.set("done");return;}
+    try{
+      const r=await fetch(url,{cache:"no-cache"});
+      if(!r.ok)throw new Error("HTTP "+r.status);
+      const j=await r.json();
+      $data.set(processRaw(j));
+      $status.set("done");
+      scheduleCache.set('current', j);
+      return;
+    }
     catch(e){console.warn(url,e.message);}
   }
-  $status.set("error");
+  if (!cached) $status.set("error"); // only flip to error if we never had anything
 }
 loadData();
 setInterval(loadData, 90000);
@@ -265,39 +352,48 @@ const SQUAD_URLS=[
   "https://cdn.jsdelivr.net/gh/openfootball/worldcup.json@master/2026/worldcup.squads.json"
 ];
 async function loadSquads(){
-  for(const url of SQUAD_URLS){
-    try{
-      const r=await fetch(url,{cache:"no-cache"});
-      if(!r.ok)throw new Error("HTTP "+r.status);
-      const j=await r.json();
-      const out={};
-      // openfootball ships squads as a top-level array; tolerate {teams:[...]} too
-      const teams = Array.isArray(j) ? j : (j.teams || []);
-      teams.forEach(t=>{
-        const rawName = t.name || t.title || "";
-        const teamName = SQUAD_NAME_NORM[rawName] || rawName;
-        const players = (t.players || t.squad || []).map(p=>{
-          // Openfootball club shape: {name, country} or just a string
-          let clubName="", clubCountry="";
-          if(p.club){
-            if(typeof p.club === "string"){ clubName=p.club; }
-            else { clubName=p.club.name||""; clubCountry=p.club.country||p.club.code||""; }
-          }
-          return {
-            name: p.name || "",
-            pos: POS_MAP[p.pos] || p.pos || "",
-            league: COUNTRY_TO_LEAGUE[clubCountry] || "Other",
-            club: clubName,
-          };
-        });
-        if(teamName && players.length) out[teamName]=players;
+  // Squad processing extracted so we can run it on cached and fresh data alike.
+  function processSquadJson(j) {
+    const out = {};
+    const teams = Array.isArray(j) ? j : (j.teams || []);
+    teams.forEach(t => {
+      const rawName = t.name || t.title || "";
+      const teamName = SQUAD_NAME_NORM[rawName] || rawName;
+      const players = (t.players || t.squad || []).map(p => {
+        let clubName="", clubCountry="";
+        if (p.club){
+          if (typeof p.club === "string"){ clubName = p.club; }
+          else { clubName = p.club.name || ""; clubCountry = p.club.country || p.club.code || ""; }
+        }
+        return {
+          name: p.name || "",
+          pos: POS_MAP[p.pos] || p.pos || "",
+          league: COUNTRY_TO_LEAGUE[clubCountry] || "Other",
+          club: clubName,
+        };
       });
-      SQUADS = out;
-      $squads.set({loaded:true, count:Object.keys(out).length});
-      return;
-    }catch(e){console.warn("[squads]",url,e.message);}
+      if (teamName && players.length) out[teamName] = players;
+    });
+    return out;
   }
-  $squads.set({loaded:false, count:0, error:true});
+  // Stale-while-revalidate: serve cached squads instantly if present
+  const cached = squadsCache.get('current');
+  if (cached) {
+    SQUADS = processSquadJson(cached);
+    $squads.set({loaded:true, count:Object.keys(SQUADS).length});
+  }
+  for (const url of SQUAD_URLS){
+    try{
+      const r = await fetch(url,{cache:"no-cache"});
+      if (!r.ok) throw new Error("HTTP "+r.status);
+      const j = await r.json();
+      SQUADS = processSquadJson(j);
+      $squads.set({loaded:true, count:Object.keys(SQUADS).length});
+      squadsCache.set('current', j);
+      return;
+    } catch(e){ console.warn("[squads]",url,e.message); }
+  }
+  if (!cached) $squads.set({loaded:false, count:0, error:true});
 }
 loadSquads();
 
@@ -307,6 +403,15 @@ const $espnStatus = createStore("idle");
 // Per-match detail (subs, cards) fetched lazily from ESPN summary endpoint
 // Shape: { [eventId]: { loading, loaded, error, fetchedAt, subs:[], cards:[] } }
 const $espnDetails = createStore({});
+
+// Persistent caches — ESPN summaries for completed matches are static and large,
+// so caching them eliminates redundant network on repeat visits and unlocks
+// suspension tracking (which needs to walk many prior matches).
+const espnSummaryCache  = persistedCache('wc2026:cache:espn:summary:v1', { maxEntries: 150 });
+// Schedule/squads from openfootball — cached with TTL so we serve instantly on
+// cold start and revalidate in the background.
+const scheduleCache     = persistedCache('wc2026:cache:openfootball:schedule:v1', { ttl: 30*60*1000, maxEntries: 4 });
+const squadsCache       = persistedCache('wc2026:cache:openfootball:squads:v1',   { ttl: 24*60*60*1000, maxEntries: 4 });
 
 const ESPN_NORM = {
   "Czechia":"Czech Republic","Korea Republic":"South Korea","Cote d'Ivoire":"Ivory Coast",
@@ -568,21 +673,137 @@ async function loadEspnSummary(eventId, force=false){
   const existing = cur[eventId];
   if (!force) {
     if (existing && existing.loading) return;
-    if (existing && existing.loaded && (Date.now() - (existing.fetchedAt||0) < 25000)) return; // 25s cache
+    if (existing && existing.loaded && (Date.now() - (existing.fetchedAt||0) < 25000)) return; // 25s in-memory cache
   }
-  $espnDetails.set({...cur, [eventId]: {...(existing||{subs:[],cards:[]}), loading:true}});
+  // Cold-start hydration: if nothing in memory yet, check persistent cache.
+  // For finalized matches the cached blob is authoritative — skip the network.
+  if (!existing && !force) {
+    const cached = espnSummaryCache.get(String(eventId));
+    if (cached) {
+      $espnDetails.set({...cur, [eventId]: {
+        subs: cached.subs||[], cards: cached.cards||[], goals: cached.goals||[], lineups: cached.lineups||{},
+        loading:false, loaded:true, error:null, fetchedAt: cached.fetchedAt || Date.now(), _final: !!cached._final
+      }});
+      if (cached._final) return; // No need to refetch a finalized game
+    }
+  }
+  $espnDetails.set({...$espnDetails.get(), [eventId]: {...(existing||{subs:[],cards:[],goals:[]}), loading:true}});
   try{
     const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${eventId}`;
     const r = await fetch(url,{cache:'no-cache'});
     if(!r.ok) throw new Error('HTTP '+r.status);
     const j = await r.json();
     const parsed = parseEspnSummary(j);
-    const cur2 = $espnDetails.get();
-    $espnDetails.set({...cur2, [eventId]: {...parsed, loading:false, loaded:true, error:null, fetchedAt: Date.now()}});
+    // Detect final status from response so we know whether to persist long-term.
+    const statusType = (j && j.header && j.header.competitions && j.header.competitions[0]
+                       && j.header.competitions[0].status && j.header.competitions[0].status.type)
+                       || (j && j.gameInfo && j.gameInfo.status && j.gameInfo.status.type)
+                       || null;
+    const isFinal = !!(statusType && (statusType.completed === true || statusType.state === 'post'));
+    const result = {...parsed, loading:false, loaded:true, error:null, fetchedAt: Date.now(), _final: isFinal};
+    $espnDetails.set({...$espnDetails.get(), [eventId]: result});
+    // Persist finalized matches so we don't refetch them on every reload.
+    if (isFinal) {
+      espnSummaryCache.set(String(eventId), {
+        subs: parsed.subs, cards: parsed.cards, goals: parsed.goals, lineups: parsed.lineups,
+        _final: true, fetchedAt: Date.now()
+      });
+    }
   }catch(e){
     console.warn('[ESPN summary]', eventId, e.message);
     const cur2 = $espnDetails.get();
-    $espnDetails.set({...cur2, [eventId]: {...(cur2[eventId]||{subs:[],cards:[]}), loading:false, error:e.message}});
+    $espnDetails.set({...cur2, [eventId]: {...(cur2[eventId]||{subs:[],cards:[],goals:[]}), loading:false, error:e.message}});
+  }
+}
+
+// ─── SUSPENSION TRACKER ──────────────────────────────────────────────────────
+// FIFA WC suspension rules we model:
+//   - Red card → 1-match suspension (next scheduled match)
+//   - Yellow-red (2nd yellow same match) → 1-match suspension
+//   - 2 accumulated yellow cards in separate matches → 1-match suspension
+// Caveats:
+//   - Yellow accumulation wipes after QFs in FIFA rules; we apply that boundary
+//     only when we render against a knockout-stage upcoming match.
+//   - We can't see disciplinary committee actions for severe reds — assume 1-match.
+//   - "Served" detection is naive: assumes the player's literal next scheduled
+//     team match is the one they miss. Injuries that extend a miss aren't modeled.
+function _normName(name){
+  return (name||'').toLowerCase().normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')   // strip diacritics
+    .replace(/[^a-z0-9]/g,'');        // strip punctuation/spaces
+}
+
+// Return prior played matches for a team in chronological order.
+function getTeamPriorMatches(team, beforeDate){
+  const all = ($data.get() || {}).all || [];
+  return all.filter(e => {
+    if (e.home !== team && e.away !== team) return false;
+    if (!e.date) return false;
+    if (beforeDate && e.date >= beforeDate) return false;
+    return !!e.score; // only matches that have actually been played
+  }).sort((a,b) => (a.date||'').localeCompare(b.date||'')
+                 || timeToMin(a.time||'') - timeToMin(b.time||''));
+}
+
+// Compute who's suspended for `team`'s next match (relative to `upcomingDate`).
+// Returns { suspended: [{name, reason}], onYellow: [{name}] }.
+function computeSuspensions(team, upcomingDate){
+  const priorMatches = getTeamPriorMatches(team, upcomingDate);
+  const players = {};   // _normName → {origName, yellows, suspendedNext}
+  priorMatches.forEach(entry => {
+    const k = pkey(entry.home, entry.away);
+    const espnE = $espn.get()[k];
+    const eventId = espnE && espnE.id;
+    if (!eventId) return;
+    const det = $espnDetails.get()[eventId];
+    if (!det || !det.loaded) return;
+    // First: anyone who was "suspended next" coming into this match has now served it.
+    Object.values(players).forEach(p => {
+      if (p.suspendedNext) { p.suspendedNext = false; p.yellows = 0; p.reason = null; }
+    });
+    // Then: apply this match's cards on team
+    const cards = (det.cards || []).filter(c => {
+      const cardTeam = norm(espnNorm(c.team || ''));
+      return cardTeam === norm(team);
+    });
+    cards.forEach(c => {
+      if (!c.player) return;
+      const nk = _normName(c.player);
+      if (!players[nk]) players[nk] = { origName: c.player, yellows: 0, suspendedNext: false, reason: null };
+      const p = players[nk];
+      if (c.type === 'red') {
+        p.suspendedNext = true; p.reason = 'red card';
+      } else if (c.type === 'yellowred') {
+        p.suspendedNext = true; p.reason = '2 yellows';
+      } else if (c.type === 'yellow') {
+        p.yellows = (p.yellows || 0) + 1;
+        if (p.yellows >= 2) { p.suspendedNext = true; p.reason = '2 yellows'; }
+      }
+    });
+  });
+  const suspended = [], onYellow = [];
+  Object.values(players).forEach(p => {
+    if (p.suspendedNext) suspended.push({ name: p.origName, reason: p.reason || 'card' });
+    else if (p.yellows === 1) onYellow.push({ name: p.origName });
+  });
+  return { suspended, onYellow };
+}
+
+// Prefetch prior-match summaries for two teams. Cached results are free; only
+// new misses hit ESPN. Tiny delay between requests to be polite.
+async function prefetchSuspensionData(homeTeam, awayTeam, upcomingDate){
+  const seen = new Set();
+  const work = [];
+  [homeTeam, awayTeam].forEach(t => {
+    getTeamPriorMatches(t, upcomingDate).forEach(e => {
+      const k = pkey(e.home, e.away);
+      const eid = $espn.get()[k] && $espn.get()[k].id;
+      if (eid && !seen.has(eid)) { seen.add(eid); work.push(eid); }
+    });
+  });
+  for (const eid of work) {
+    await loadEspnSummary(eid);
+    await new Promise(r => setTimeout(r, 80));
   }
 }
 
@@ -678,6 +899,52 @@ function matchCard(entry, todayISO, showSquads=true) {
 
   const espnEventId = espn && espn.id;
   const canHaveEvents = !!espnEventId && (isLive || status==='played');
+  const isUpcoming = (status === 'upcoming' || status === 'today') && !isLive && !scoreDisp;
+
+  // Suspensions section: who can't play in this upcoming match because of cards
+  // earned in earlier matches. Lazy-prefetched on expand; renders incrementally.
+  const suspensionsEl = div({style:{marginBottom:'12px'}});
+  let suspensionsHasContent = false;
+  function renderSuspensions(){
+    if (!isUpcoming) { suspensionsEl.innerHTML=''; return; }
+    const sH = computeSuspensions(home, date);
+    const sA = computeSuspensions(away, date);
+    const anyContent = sH.suspended.length || sA.suspended.length
+                    || sH.onYellow.length || sA.onYellow.length;
+    if (!anyContent) {
+      // Hide entirely until/unless there's something to show; avoids an empty
+      // section above squads when we have nothing relevant yet.
+      suspensionsEl.innerHTML = '';
+      suspensionsHasContent = false;
+      return;
+    }
+    suspensionsHasContent = true;
+    suspensionsEl.innerHTML = '';
+    if (sH.suspended.length || sA.suspended.length) {
+      suspensionsEl.appendChild(div({style:{fontSize:'10px',color:'#6b7280',fontWeight:600,letterSpacing:'0.5px',marginBottom:'4px',textTransform:'uppercase'}},'Suspensions'));
+      suspensionsEl.appendChild(div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'8px'}},
+        div({}, ...sH.suspended.map(p => div({style:{fontSize:'11px',color:'#fca5a5',lineHeight:'1.7'}},
+          '⛔ ', span({style:{color:'#e2e8f0',fontWeight:500}}, p.name),
+          span({style:{color:'#6b7280',marginLeft:'4px'}}, p.reason)
+        ))),
+        div({style:{textAlign:'right'}}, ...sA.suspended.map(p => div({style:{fontSize:'11px',color:'#fca5a5',lineHeight:'1.7'}},
+          span({style:{color:'#6b7280',marginRight:'4px'}}, p.reason),
+          span({style:{color:'#e2e8f0',fontWeight:500}}, p.name), ' ⛔'
+        )))
+      ));
+    }
+    if (sH.onYellow.length || sA.onYellow.length) {
+      suspensionsEl.appendChild(div({style:{fontSize:'10px',color:'#6b7280',fontWeight:600,letterSpacing:'0.5px',marginBottom:'4px',textTransform:'uppercase'}},'On a yellow'));
+      suspensionsEl.appendChild(div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'8px'}},
+        div({}, ...sH.onYellow.map(p => div({style:{fontSize:'11px',color:'#fcd34d',lineHeight:'1.7'}},
+          '🟨 ', span({style:{color:'#cbd5e1'}}, p.name)
+        ))),
+        div({style:{textAlign:'right'}}, ...sA.onYellow.map(p => div({style:{fontSize:'11px',color:'#fcd34d',lineHeight:'1.7'}},
+          span({style:{color:'#cbd5e1'}}, p.name), ' 🟨'
+        )))
+      ));
+    }
+  }
 
   // Events section: subs + cards from ESPN summary (lazy-loaded on expand)
   const eventsEl = div({style:{marginBottom:'12px'}});
@@ -824,6 +1091,7 @@ function matchCard(entry, todayISO, showSquads=true) {
       ));
     }
     if (canHaveEvents) kids.push(eventsEl);
+    if (isUpcoming) kids.push(suspensionsEl);
     if (showSquads && stage==="group") {
       const squadsGrid = div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}},
         ...[home,away].map(team=>div({style:{minWidth:0}},
@@ -880,6 +1148,14 @@ function matchCard(entry, todayISO, showSquads=true) {
           loadEspnSummary(espnEventId);
           unsubDetails = $espnDetails.sub(()=>renderEvents());
           if (isLive) liveRefresh = setInterval(()=>loadEspnSummary(espnEventId, true), 30000);
+        }
+        if (isUpcoming) {
+          // Immediate render in case cached match data already covers it
+          renderSuspensions();
+          // Subscribe so the section fills in as prefetched summaries arrive
+          if (!unsubDetails) unsubDetails = $espnDetails.sub(()=>renderSuspensions());
+          // Fire-and-forget prefetch; cached summaries are free, only misses hit ESPN
+          prefetchSuspensionData(home, away, date);
         }
         // Smooth-scroll the card header into view so the user doesn't lose context
         // when expanding cards near the bottom of the viewport on mobile.
