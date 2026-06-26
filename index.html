@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.12.4';
+const APP_VERSION = 'v0.12.5';
 const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -1642,18 +1642,33 @@ function projSlotEl(projSlot) {
   if (!projSlot) return span({style:{color:'#374151',fontSize:'11px'}},'TBD');
   const { team, confidence, alts=[], candidates } = projSlot;
 
-  // Simulated: candidate stack, collapsing to a single locked row when one
-  // team is dominant (≥90% or all others <10%)
+  // Simulated: candidate stack, with three display tiers:
+  //   • LOCKED (green): top ≥90% or all others <10% — visually emphatic, no doubt
+  //   • PROJECTED (blue): top ≥55% AND lead over 2nd ≥25% — clear front-runner,
+  //     show as a single named slot with % badge so the bracket reads cleanly
+  //     without losing the "not quite locked" signal
+  //   • STACK: otherwise — show top 3 candidates with probability bars
   if (candidates && candidates.length) {
     const top = candidates[0];
-    const dominant = top.pct >= 0.9 || candidates.slice(1).every(c => c.pct < 0.1);
-    if (dominant) {
+    const secondPct = candidates[1] ? candidates[1].pct : 0;
+    const locked = top.pct >= 0.9 || candidates.slice(1).every(c => c.pct < 0.1);
+    const projected = !locked && top.pct >= 0.55 && (top.pct - secondPct) >= 0.25;
+    if (locked) {
       return div({style:{display:'flex',alignItems:'center',gap:'6px',padding:'5px 8px',borderRadius:'4px',background:'rgba(74,222,128,0.07)',border:'1px solid rgba(74,222,128,0.25)',cursor:'pointer'},
         onclick:function(e){e.stopPropagation();navigateToTeam(top.team);}},
         span({style:{fontSize:'14px',flexShrink:0}}, FLAG[top.team]||'❓'),
         span({style:{fontSize:'11px',fontWeight:600,color:'#e2e8f0',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, top.team),
         span({style:{fontSize:'8px',color:'#4ade80',fontFamily:'monospace',flexShrink:0,background:'rgba(74,222,128,0.12)',padding:'1px 4px',borderRadius:'3px'}},
           top.pct >= 0.995 ? 'LOCKED' : Math.round(top.pct*100)+'%')
+      );
+    }
+    if (projected) {
+      return div({style:{display:'flex',alignItems:'center',gap:'6px',padding:'5px 8px',borderRadius:'4px',background:'rgba(147,197,253,0.06)',border:'1px solid rgba(147,197,253,0.22)',cursor:'pointer'},
+        onclick:function(e){e.stopPropagation();navigateToTeam(top.team);}},
+        span({style:{fontSize:'14px',flexShrink:0}}, FLAG[top.team]||'❓'),
+        span({style:{fontSize:'11px',fontWeight:600,color:'#e2e8f0',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, top.team),
+        span({style:{fontSize:'8px',color:'#93c5fd',fontFamily:'monospace',flexShrink:0,background:'rgba(147,197,253,0.12)',padding:'1px 4px',borderRadius:'3px'}},
+          Math.round(top.pct*100)+'%')
       );
     }
     return div({style:{display:'flex',flexDirection:'column',gap:'2px',width:'100%'}},
@@ -1954,7 +1969,8 @@ function buildBracketView() {
     legend.innerHTML = '';
     const items = [
       {color:'#3b82f6', label:'Bar width = probability across simulations'},
-      {color:'#4ade80', label:'Locked (only one possibility)'},
+      {color:'#93c5fd', label:'Projected (strong front-runner)'},
+      {color:'#4ade80', label:'Locked (mathematically certain)'},
     ];
     items.forEach(({color,label}) => {
       legend.appendChild(div({style:{display:'flex',alignItems:'center',gap:'5px'}},
@@ -2134,15 +2150,17 @@ function buildBracketView() {
             if (sibNum) {
               const sibSlots = getSlots(sibNum);
               // Match the same "looks locked" heuristic projSlotEl uses: either
-              // confidence is confirmed (openfootball updated / math-locked), or
-              // sim shows a dominant candidate (≥90% or all others <10%).
+              // Match the same "looks locked or projected" heuristic projSlotEl uses:
+              // confirmed, dominant (≥90%), or projected (≥55% with ≥25% lead).
               function effectiveTeam(slot) {
                 if (!slot) return null;
                 if (slot.confidence === 'confirmed' && slot.team && slot.team !== 'TBD') return slot.team;
                 if (slot.candidates && slot.candidates.length) {
                   const top = slot.candidates[0];
-                  const dominant = top.pct >= 0.9 || slot.candidates.slice(1).every(c => c.pct < 0.1);
-                  if (dominant) return top.team;
+                  const secondPct = slot.candidates[1] ? slot.candidates[1].pct : 0;
+                  const locked = top.pct >= 0.9 || slot.candidates.slice(1).every(c => c.pct < 0.1);
+                  const projected = top.pct >= 0.55 && (top.pct - secondPct) >= 0.25;
+                  if (locked || projected) return top.team;
                 }
                 return null;
               }
