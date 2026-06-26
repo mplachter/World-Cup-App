@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.12.2';
+const APP_VERSION = 'v0.12.3';
 const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -281,6 +281,14 @@ const $showCompleted = persistedStore('wc2026:showCompleted', false,
 const $collapsedDays = persistedStore('wc2026:collapsedDays:v1', {},
   v => v && typeof v === 'object' && !Array.isArray(v));
 
+// Persistent caches — declared up here (above any load* function call) so the
+// load functions can reference them synchronously without hitting the temporal
+// dead zone. ESPN summaries for completed matches are static and large, so we
+// cache them forever; openfootball schedule/squads use TTL stale-while-revalidate.
+const espnSummaryCache = persistedCache('wc2026:cache:espn:summary:v1', { maxEntries: 150 });
+const scheduleCache    = persistedCache('wc2026:cache:openfootball:schedule:v1', { ttl: 30*60*1000, maxEntries: 4 });
+const squadsCache      = persistedCache('wc2026:cache:openfootball:squads:v1',   { ttl: 24*60*60*1000, maxEntries: 4 });
+
 // Helper: switch to the Teams tab and open a team's detail page. Used by all
 // the team-name elements scattered through the bracket (slot rows, candidate
 // stacks, locked-team rows, R32 list view). TBD/null is a no-op.
@@ -418,14 +426,9 @@ const $espnStatus = createStore("idle");
 // Shape: { [eventId]: { loading, loaded, error, fetchedAt, subs:[], cards:[] } }
 const $espnDetails = createStore({});
 
-// Persistent caches — ESPN summaries for completed matches are static and large,
-// so caching them eliminates redundant network on repeat visits and unlocks
-// suspension tracking (which needs to walk many prior matches).
-const espnSummaryCache  = persistedCache('wc2026:cache:espn:summary:v1', { maxEntries: 150 });
-// Schedule/squads from openfootball — cached with TTL so we serve instantly on
-// cold start and revalidate in the background.
-const scheduleCache     = persistedCache('wc2026:cache:openfootball:schedule:v1', { ttl: 30*60*1000, maxEntries: 4 });
-const squadsCache       = persistedCache('wc2026:cache:openfootball:squads:v1',   { ttl: 24*60*60*1000, maxEntries: 4 });
+// Persistent caches are declared higher up so loadData()/loadSquads() can see
+// them at script-init time (they reference them synchronously before the first
+// await; if declared below the load calls they'd hit the temporal dead zone).
 
 const ESPN_NORM = {
   "Czechia":"Czech Republic","Korea Republic":"South Korea","Cote d'Ivoire":"Ivory Coast",
