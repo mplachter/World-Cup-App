@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.10.2';
+const APP_VERSION = 'v0.10.3';
 const BUILD_DATE = '2026-06-25';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -305,8 +305,15 @@ const $espnDetails = createStore({});
 
 const ESPN_NORM = {
   "Czechia":"Czech Republic","Korea Republic":"South Korea","Cote d'Ivoire":"Ivory Coast",
+  "Côte d'Ivoire":"Ivory Coast",
   "Bosnia-Herzegovina":"Bosnia and Herzegovina","DR Congo":"DR Congo","Curacao":"Curaçao",
   "Cape Verde":"Cape Verde","New Zealand":"New Zealand","Saudi Arabia":"Saudi Arabia",
+  // FIFA officially renamed Turkey to Türkiye in 2022; ESPN follows the new name.
+  "Türkiye":"Turkey","Turkiye":"Turkey",
+  // ESPN sometimes uses "United States" instead of "USA"; NORM later folds it again.
+  "United States":"USA","US Virgin Islands":"US Virgin Islands",
+  // Other common variants seen in fifa.world feeds
+  "IR Iran":"Iran","Republic of Ireland":"Ireland","Macedonia":"North Macedonia",
 };
 function espnNorm(n){ return ESPN_NORM[n]||n; }
 
@@ -348,6 +355,11 @@ async function loadESPN(){
         broadcast: bcast.join(" · "),
         htScore: null,
       };
+    });
+    // Diagnostic: log all LIVE games' team names + derived pkey so name mismatches
+    // (where openfootball uses one spelling and ESPN another) are obvious in DevTools.
+    Object.entries(map).forEach(([k,v])=>{
+      if (v.isLive) console.log('[ESPN live]', v.homeName, 'vs', v.awayName, '· key:', k, '· score:', v.score, '· clock:', v.clock);
     });
     $espn.set(map);
     $espnStatus.set(hasLive?"live":"idle");
