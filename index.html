@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.12.3';
+const APP_VERSION = 'v0.12.4';
 const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -1141,7 +1141,12 @@ function matchCard(entry, todayISO, showSquads=true) {
     }
     if (canHaveEvents) kids.push(eventsEl);
     if (isUpcoming) kids.push(suspensionsEl);
-    if (showSquads && stage==="group") {
+    // Squads section: previously gated to group stage only because R32+ slots
+    // are often TBD pre-results. With knockout matches that do have locked teams
+    // (like an R32 between two confirmed group winners), squad info is useful.
+    // squadPanel handles missing data with an "unavailable" message so TBD slots
+    // degrade gracefully.
+    if (showSquads) {
       const squadsGrid = div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}},
         ...[home,away].map(team=>div({style:{minWidth:0}},
           div({style:{display:'flex',alignItems:'center',gap:'6px',marginBottom:'8px'}},
@@ -2392,7 +2397,7 @@ function buildScheduleView() {
       const collapsible = !!opts.date && !opts.isToday;
       const isCollapsed = collapsible && !!$collapsedDays.get()[opts.date];
 
-      const body = div({}, ...entries.map(e => matchCard(e, todayISO, e.stage === 'group')));
+      const body = div({}, ...entries.map(e => matchCard(e, todayISO, true)));
       if (isCollapsed) body.style.display = 'none';
 
       const chevron = collapsible ? span({style:{
