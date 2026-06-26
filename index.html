@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.11.0';
+const APP_VERSION = 'v0.11.1';
 const BUILD_DATE = '2026-06-25';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -203,6 +203,11 @@ const $selectedTeam = persistedStore('wc2026:selectedTeam', null,
 // user's preference if they expand them. Most-used page → less scroll matters.
 const $showCompleted = persistedStore('wc2026:showCompleted', false,
   v => typeof v === 'boolean');
+// Per-day collapse state on the schedule view. Map of { 'YYYY-MM-DD': true } —
+// only collapsed days are stored, keeping the blob small. TODAY is never
+// collapsible; UPCOMING and COMPLETED day headers tap to toggle.
+const $collapsedDays = persistedStore('wc2026:collapsedDays:v1', {},
+  v => v && typeof v === 'object' && !Array.isArray(v));
 
 // Helper: switch to the Teams tab and open a team's detail page. Used by all
 // the team-name elements scattered through the bracket (slot rows, candidate
@@ -1736,6 +1741,32 @@ function buildBracketView() {
       // list of compact cards. Uses the same getSlots() logic so locked matches
       // show team names + confirmed confidence, while TBD matches show probabilities
       // (for R32 when sim data is present) or placeholder TBD.
+      //
+      // Forward-link footer per card: "→ M89 (R16) · winner faces M76 winner".
+      // Without this, the list view loses the connectivity the SVG bracket provides.
+      // Tappable to switch to that round + scroll to the next match.
+      const BL_PAIRS = {r32:[74,76,73,75,78,77,81,82], r16:[89,90,91,92], qf:[97,99]};
+      const BR_PAIRS = {r32:[83,84,85,87,80,86,88,79], r16:[93,94,95,96], qf:[98,100]};
+      const NEXT_M = {}, SIBLING_M = {};
+      function _pair(arr, nextArr){
+        for (let i=0; i<arr.length; i+=2) {
+          const a=arr[i], b=arr[i+1], n=nextArr[i/2];
+          NEXT_M[a]=n; NEXT_M[b]=n; SIBLING_M[a]=b; SIBLING_M[b]=a;
+        }
+      }
+      _pair(BL_PAIRS.r32, BL_PAIRS.r16);
+      _pair(BR_PAIRS.r32, BR_PAIRS.r16);
+      _pair(BL_PAIRS.r16, BL_PAIRS.qf);
+      _pair(BR_PAIRS.r16, BR_PAIRS.qf);
+      _pair([97,98,99,100], [101,102]); // QF → SF (top half + bottom half)
+      _pair([101,102], [104]);          // SF → Final
+      const ROUND_OF = {};
+      [73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88].forEach(n=>ROUND_OF[n]='R16');
+      [89,90,91,92,93,94,95,96].forEach(n=>ROUND_OF[n]='QF');
+      [97,98,99,100].forEach(n=>ROUND_OF[n]='SF');
+      [101,102].forEach(n=>ROUND_OF[n]='Final');
+      const ROUND_TAB = {'R16':'r16','QF':'qf','SF':'sf','Final':'final'};
+
       const nums = ROUND_MATCHES[view] || [];
       const SR = {r32:'R32',r16:'R16',qf:'Quarterfinal',sf:'Semifinal','3rd':'Third place',final:'Final'};
       content.appendChild(div({style:{fontSize:'10px',color:'#6b7280',fontWeight:600,letterSpacing:'0.04em',textTransform:'uppercase',marginBottom:'8px'}}, SR[view] + ' · ' + nums.length + ' match' + (nums.length===1?'':'es')));
@@ -1745,7 +1776,10 @@ function buildBracketView() {
         const tm = entry?.time ? localTime(entry.time) : '';
         const venue = entry?.ground || '';
         const meta = [ko, tm].filter(Boolean).join(' · ');
-        const card = div({style:{borderRadius:'8px',marginBottom:'6px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)',overflow:'hidden'}},
+        const nextNum = NEXT_M[num];
+        const sibNum = SIBLING_M[num];
+        const nextRound = nextNum ? ROUND_OF[num] : null; // round of the *advances-to* match
+        const card = div({style:{borderRadius:'8px',marginBottom:'6px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)',overflow:'hidden'}, 'data-match-num': String(num)},
           // Header strip: match number + date/time + venue
           (meta || venue) && div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 12px',fontSize:'10px',color:'#6b7280',background:'rgba(255,255,255,0.02)',borderBottom:'1px solid rgba(255,255,255,0.04)'}},
             span({style:{display:'flex',alignItems:'center',gap:'8px'}},
@@ -1759,6 +1793,22 @@ function buildBracketView() {
             div({style:{flex:1,minWidth:0}}, projSlotEl(home)),
             span({style:{fontSize:'10px',color:'#4b5563',padding:'0 4px',flexShrink:0}}, 'vs'),
             div({style:{flex:1,minWidth:0}}, projSlotEl(away))
+          ),
+          // Footer: forward link to next match (tap to jump rounds)
+          nextNum && div({style:{padding:'5px 12px 7px',fontSize:'10px',color:'#6b7280',borderTop:'1px solid rgba(255,255,255,0.04)',background:'rgba(255,255,255,0.015)',cursor:'pointer'},
+            onclick:function(){
+              const tabId = ROUND_TAB[nextRound];
+              if (!tabId) return;
+              view = tabId;
+              render();
+              setTimeout(()=>{
+                const el = content.querySelector('[data-match-num="'+nextNum+'"]');
+                if (el) el.scrollIntoView({behavior:'smooth',block:'center'});
+              }, 30);
+            }
+          },
+            span({style:{color:'#60a5fa'}}, '→ M'+nextNum+' ('+nextRound+')'),
+            sibNum ? span({style:{color:'#4b5563'}}, ' · winner faces M'+sibNum+' winner') : null
           )
         );
         content.appendChild(card);
@@ -1972,23 +2022,56 @@ function buildScheduleView() {
     // while you scroll. Top: 0 is fine — none of the ancestors set
     // overflow:hidden/auto, and the app header isn't sticky so it just
     // scrolls away naturally.
+    // If opts.date is passed (UPCOMING/COMPLETED day groups), the header becomes
+    // clickable to toggle collapse state, persisted in $collapsedDays.
     function daySection(label, entries, opts={}) {
       const stage = SL[entries[0].stage];
-      return div({style:{marginBottom:'18px'},id:opts.id||undefined},
-        div({style:{position:'sticky',top:'0',zIndex:5,
-          background:'rgba(10,15,30,0.94)',backdropFilter:'blur(8px)',
-          padding:'10px 4px 7px',marginBottom:'4px',
-          display:'flex',alignItems:'center',gap:'10px',
-          borderBottom:'1px solid '+(opts.isToday?'rgba(217,119,6,0.35)':'rgba(255,255,255,0.07)')
-        }},
-          span({style:{fontSize:'12px',fontWeight:'700',
-            color:opts.isToday?'#fbbf24':'#cbd5e1',
-            letterSpacing:'0.04em',whiteSpace:'nowrap',flexShrink:0}}, label),
-          div({style:{flex:1}}),
-          stage && span({style:{fontSize:'10px',color:'#4b5563',flexShrink:0}}, stage)
-        ),
-        ...entries.map(e => matchCard(e, todayISO, e.stage === 'group'))
+      const collapsible = !!opts.date && !opts.isToday;
+      const isCollapsed = collapsible && !!$collapsedDays.get()[opts.date];
+
+      const body = div({}, ...entries.map(e => matchCard(e, todayISO, e.stage === 'group')));
+      if (isCollapsed) body.style.display = 'none';
+
+      const chevron = collapsible ? span({style:{
+        fontSize:'10px', color:'#6b7280', transition:'transform .15s',
+        transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0)',
+        display:'inline-block', flexShrink:0
+      }}, '▼') : null;
+
+      const countTag = collapsible ? span({style:{fontSize:'10px',color:'#6b7280',flexShrink:0}},
+        entries.length + ' match' + (entries.length===1?'':'es')
+      ) : null;
+
+      const header = div({style:Object.assign({
+        position:'sticky',top:'0',zIndex:5,
+        background:'rgba(10,15,30,0.94)',backdropFilter:'blur(8px)',
+        padding:'10px 4px 7px',marginBottom:'4px',
+        display:'flex',alignItems:'center',gap:'10px',
+        borderBottom:'1px solid '+(opts.isToday?'rgba(217,119,6,0.35)':'rgba(255,255,255,0.07)')
+      }, collapsible?{cursor:'pointer',userSelect:'none'}:{})},
+        chevron,
+        span({style:{fontSize:'12px',fontWeight:'700',
+          color:opts.isToday?'#fbbf24':'#cbd5e1',
+          letterSpacing:'0.04em',whiteSpace:'nowrap',flexShrink:0}}, label),
+        div({style:{flex:1}}),
+        isCollapsed && countTag,
+        stage && span({style:{fontSize:'10px',color:'#4b5563',flexShrink:0}}, stage)
       );
+
+      if (collapsible) {
+        header.onclick = function(){
+          const m = {...$collapsedDays.get()};
+          if (m[opts.date]) delete m[opts.date]; else m[opts.date] = true;
+          $collapsedDays.set(m);
+          const nowCollapsed = !!m[opts.date];
+          body.style.display = nowCollapsed ? 'none' : 'block';
+          if (chevron) chevron.style.transform = nowCollapsed ? 'rotate(-90deg)' : 'rotate(0)';
+          // Show/hide the count tag without re-rendering
+          if (countTag) countTag.style.display = nowCollapsed ? 'inline' : 'none';
+        };
+      }
+
+      return div({style:{marginBottom:'18px'},id:opts.id||undefined}, header, body);
     }
 
     // ── TODAY ──
@@ -2000,7 +2083,7 @@ function buildScheduleView() {
     const upcomingByDate = {};
     upcoming.forEach(e => { (upcomingByDate[e.date] = upcomingByDate[e.date] || []).push(e); });
     Object.keys(upcomingByDate).sort().forEach(date => {
-      container.appendChild(daySection(fmtDate(date), upcomingByDate[date]));
+      container.appendChild(daySection(fmtDate(date), upcomingByDate[date], {date}));
     });
 
     // ── COMPLETED ── collapsible block, default hidden. Toggle persisted.
@@ -2011,7 +2094,7 @@ function buildScheduleView() {
 
       const wrap = div({style:{display:$showCompleted.get()?'block':'none',marginTop:'4px'}});
       completedDates.forEach(date => {
-        wrap.appendChild(daySection(fmtDate(date), completedByDate[date]));
+        wrap.appendChild(daySection(fmtDate(date), completedByDate[date], {date}));
       });
 
       const toggle = btn({style:{
