@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.11.1';
+const APP_VERSION = 'v0.11.2';
 const BUILD_DATE = '2026-06-25';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -1795,21 +1795,47 @@ function buildBracketView() {
             div({style:{flex:1,minWidth:0}}, projSlotEl(away))
           ),
           // Footer: forward link to next match (tap to jump rounds)
-          nextNum && div({style:{padding:'5px 12px 7px',fontSize:'10px',color:'#6b7280',borderTop:'1px solid rgba(255,255,255,0.04)',background:'rgba(255,255,255,0.015)',cursor:'pointer'},
-            onclick:function(){
-              const tabId = ROUND_TAB[nextRound];
-              if (!tabId) return;
-              view = tabId;
-              render();
-              setTimeout(()=>{
-                const el = content.querySelector('[data-match-num="'+nextNum+'"]');
-                if (el) el.scrollIntoView({behavior:'smooth',block:'center'});
-              }, 30);
+          nextNum && (() => {
+            // Build the "winner faces …" suffix smartly:
+            // - both sibling slots locked with real teams → show those team names + flags
+            // - one slot locked → show that team + "or M-winner"
+            // - neither → fall back to "M82 winner"
+            let suffix = null;
+            if (sibNum) {
+              const sibSlots = getSlots(sibNum);
+              const sH = sibSlots.home, sA = sibSlots.away;
+              const hLocked = sH && sH.confidence === 'confirmed' && sH.team && sH.team !== 'TBD';
+              const aLocked = sA && sA.confidence === 'confirmed' && sA.team && sA.team !== 'TBD';
+              function flagged(name) {
+                const f = FLAG[name];
+                return f ? (f + ' ' + name) : name;
+              }
+              if (hLocked && aLocked) {
+                suffix = span({style:{color:'#94a3b8'}}, ' · winner faces ', flagged(sH.team), ' / ', flagged(sA.team));
+              } else if (hLocked) {
+                suffix = span({style:{color:'#94a3b8'}}, ' · winner faces ', flagged(sH.team), span({style:{color:'#4b5563'}}, ' or M'+sibNum+' away winner'));
+              } else if (aLocked) {
+                suffix = span({style:{color:'#94a3b8'}}, ' · winner faces ', flagged(sA.team), span({style:{color:'#4b5563'}}, ' or M'+sibNum+' home winner'));
+              } else {
+                suffix = span({style:{color:'#4b5563'}}, ' · winner faces M'+sibNum+' winner');
+              }
             }
-          },
-            span({style:{color:'#60a5fa'}}, '→ M'+nextNum+' ('+nextRound+')'),
-            sibNum ? span({style:{color:'#4b5563'}}, ' · winner faces M'+sibNum+' winner') : null
-          )
+            return div({style:{padding:'5px 12px 7px',fontSize:'10px',color:'#6b7280',borderTop:'1px solid rgba(255,255,255,0.04)',background:'rgba(255,255,255,0.015)',cursor:'pointer'},
+              onclick:function(){
+                const tabId = ROUND_TAB[nextRound];
+                if (!tabId) return;
+                view = tabId;
+                render();
+                setTimeout(()=>{
+                  const el = content.querySelector('[data-match-num="'+nextNum+'"]');
+                  if (el) el.scrollIntoView({behavior:'smooth',block:'center'});
+                }, 30);
+              }
+            },
+              span({style:{color:'#60a5fa'}}, '→ M'+nextNum+' ('+nextRound+')'),
+              suffix
+            );
+          })()
         );
         content.appendChild(card);
       });
