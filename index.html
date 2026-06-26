@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.12.0';
+const APP_VERSION = 'v0.12.1';
 const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -745,23 +745,46 @@ function getTeamPriorMatches(team, beforeDate){
                  || timeToMin(a.time||'') - timeToMin(b.time||''));
 }
 
+// FIFA 2026 yellow-card reset rule: cautions accumulate within "blocks" and
+// reset at block boundaries (after group stage, after QF). A pending suspension
+// already triggered (red, yellow-red, or 2 yellows in same block) still gets
+// served — the reset clears single cautions but not a confirmed suspension.
+//   Block 1: group
+//   Block 2: r32 + r16 + qf
+//   Block 3: sf + final + 3rd
+function _disciplineBlock(stage){
+  if (stage === 'r32' || stage === 'r16' || stage === 'qf') return 2;
+  if (stage === 'sf' || stage === 'final' || stage === '3rd') return 3;
+  return 1; // group (or unknown — treat as group)
+}
+
 // Compute who's suspended for `team`'s next match (relative to `upcomingDate`).
+// Pass the upcoming match's stage so we know which discipline block to evaluate
+// against; "on a yellow" is only relevant within the same block.
 // Returns { suspended: [{name, reason}], onYellow: [{name}] }.
-function computeSuspensions(team, upcomingDate){
+function computeSuspensions(team, upcomingDate, upcomingStage){
+  const upcomingBlock = _disciplineBlock(upcomingStage || 'group');
   const priorMatches = getTeamPriorMatches(team, upcomingDate);
-  const players = {};   // _normName → {origName, yellows, suspendedNext}
+  const players = {};
+  let currentBlock = null;
   priorMatches.forEach(entry => {
+    const matchBlock = _disciplineBlock(entry.stage);
+    // Block boundary BEFORE this match: wipe single-yellow counts, keep
+    // pending suspensions (those must still be served).
+    if (currentBlock !== null && matchBlock !== currentBlock) {
+      Object.values(players).forEach(p => { p.yellows = 0; });
+    }
+    currentBlock = matchBlock;
+    // Players suspended coming INTO this match have now served their ban.
+    Object.values(players).forEach(p => {
+      if (p.suspendedNext) { p.suspendedNext = false; p.yellows = 0; p.reason = null; }
+    });
     const k = pkey(entry.home, entry.away);
     const espnE = $espn.get()[k];
     const eventId = espnE && espnE.id;
     if (!eventId) return;
     const det = $espnDetails.get()[eventId];
     if (!det || !det.loaded) return;
-    // First: anyone who was "suspended next" coming into this match has now served it.
-    Object.values(players).forEach(p => {
-      if (p.suspendedNext) { p.suspendedNext = false; p.yellows = 0; p.reason = null; }
-    });
-    // Then: apply this match's cards on team
     const cards = (det.cards || []).filter(c => {
       const cardTeam = norm(espnNorm(c.team || ''));
       return cardTeam === norm(team);
@@ -774,13 +797,18 @@ function computeSuspensions(team, upcomingDate){
       if (c.type === 'red') {
         p.suspendedNext = true; p.reason = 'red card';
       } else if (c.type === 'yellowred') {
-        p.suspendedNext = true; p.reason = '2 yellows';
+        p.suspendedNext = true; p.reason = '2 yellows (same match)';
       } else if (c.type === 'yellow') {
         p.yellows = (p.yellows || 0) + 1;
         if (p.yellows >= 2) { p.suspendedNext = true; p.reason = '2 yellows'; }
       }
     });
   });
+  // Final block boundary: if the last prior match's block differs from the
+  // upcoming match's block, wipe single yellows. Pending suspensions remain.
+  if (currentBlock !== null && currentBlock !== upcomingBlock) {
+    Object.values(players).forEach(p => { p.yellows = 0; });
+  }
   const suspended = [], onYellow = [];
   Object.values(players).forEach(p => {
     if (p.suspendedNext) suspended.push({ name: p.origName, reason: p.reason || 'card' });
@@ -907,8 +935,8 @@ function matchCard(entry, todayISO, showSquads=true) {
   let suspensionsHasContent = false;
   function renderSuspensions(){
     if (!isUpcoming) { suspensionsEl.innerHTML=''; return; }
-    const sH = computeSuspensions(home, date);
-    const sA = computeSuspensions(away, date);
+    const sH = computeSuspensions(home, date, stage);
+    const sA = computeSuspensions(away, date, stage);
     const anyContent = sH.suspended.length || sA.suspended.length
                     || sH.onYellow.length || sA.onYellow.length;
     if (!anyContent) {
