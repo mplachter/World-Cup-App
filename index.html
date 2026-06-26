@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.12.1';
+const APP_VERSION = 'v0.12.2';
 const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -320,6 +320,27 @@ setInterval(() => {
 
 // Fixtures
 const URLS=["https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json","https://cdn.jsdelivr.net/gh/openfootball/worldcup.json@master/2026/worldcup.json"];
+
+// Race multiple URLs against each other with an overall timeout. Returns the
+// parsed JSON from whichever URL succeeds first. Critical because plain fetch()
+// has no default timeout — github raw occasionally hangs, leaving the app
+// permanently on the "loading" state with no way to recover until the user
+// manually retries. AbortSignal.timeout (modern browsers) gives us a hard cap.
+async function fetchJsonAny(urls, timeoutMs){
+  timeoutMs = timeoutMs || 8000;
+  const tryOne = (url) => {
+    const init = { cache: 'no-cache' };
+    // AbortSignal.timeout is supported in Chrome 103+/Safari 16+/Firefox 100+
+    try { init.signal = AbortSignal.timeout(timeoutMs); } catch(e) {}
+    return fetch(url, init).then(r => {
+      if (!r.ok) throw new Error('HTTP '+r.status+' from '+url);
+      return r.json();
+    });
+  };
+  // Promise.any: first successful wins; rejects only if all fail.
+  return Promise.any(urls.map(tryOne));
+}
+
 async function loadData(){
   $status.set("loading");
   // Stale-while-revalidate: serve cached schedule instantly, then revalidate.
@@ -329,19 +350,15 @@ async function loadData(){
     $data.set(processRaw(cached));
     $status.set("done");
   }
-  for(const url of URLS){
-    try{
-      const r=await fetch(url,{cache:"no-cache"});
-      if(!r.ok)throw new Error("HTTP "+r.status);
-      const j=await r.json();
-      $data.set(processRaw(j));
-      $status.set("done");
-      scheduleCache.set('current', j);
-      return;
-    }
-    catch(e){console.warn(url,e.message);}
+  try {
+    const j = await fetchJsonAny(URLS);
+    $data.set(processRaw(j));
+    $status.set("done");
+    scheduleCache.set('current', j);
+  } catch (e) {
+    console.warn('[loadData] all sources failed:', e && e.message);
+    if (!cached) $status.set("error"); // only flip to error if we never had anything
   }
-  if (!cached) $status.set("error"); // only flip to error if we never had anything
 }
 loadData();
 setInterval(loadData, 90000);
@@ -382,18 +399,15 @@ async function loadSquads(){
     SQUADS = processSquadJson(cached);
     $squads.set({loaded:true, count:Object.keys(SQUADS).length});
   }
-  for (const url of SQUAD_URLS){
-    try{
-      const r = await fetch(url,{cache:"no-cache"});
-      if (!r.ok) throw new Error("HTTP "+r.status);
-      const j = await r.json();
-      SQUADS = processSquadJson(j);
-      $squads.set({loaded:true, count:Object.keys(SQUADS).length});
-      squadsCache.set('current', j);
-      return;
-    } catch(e){ console.warn("[squads]",url,e.message); }
+  try {
+    const j = await fetchJsonAny(SQUAD_URLS);
+    SQUADS = processSquadJson(j);
+    $squads.set({loaded:true, count:Object.keys(SQUADS).length});
+    squadsCache.set('current', j);
+  } catch (e) {
+    console.warn('[loadSquads] all sources failed:', e && e.message);
+    if (!cached) $squads.set({loaded:false, count:0, error:true});
   }
-  if (!cached) $squads.set({loaded:false, count:0, error:true});
 }
 loadSquads();
 
@@ -430,7 +444,9 @@ function espnNorm(n){ return ESPN_NORM[n]||n; }
 async function loadESPN(){
   try{
     const url="https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=200&dates=20260611-20260719";
-    const r=await fetch(url,{cache:"no-cache"});
+    const init={cache:"no-cache"};
+    try { init.signal = AbortSignal.timeout(8000); } catch(e){}
+    const r=await fetch(url,init);
     if(!r.ok)throw new Error("HTTP "+r.status);
     const j=await r.json();
     const map={};
@@ -690,7 +706,9 @@ async function loadEspnSummary(eventId, force=false){
   $espnDetails.set({...$espnDetails.get(), [eventId]: {...(existing||{subs:[],cards:[],goals:[]}), loading:true}});
   try{
     const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${eventId}`;
-    const r = await fetch(url,{cache:'no-cache'});
+    const init = {cache:'no-cache'};
+    try { init.signal = AbortSignal.timeout(8000); } catch(e){}
+    const r = await fetch(url,init);
     if(!r.ok) throw new Error('HTTP '+r.status);
     const j = await r.json();
     const parsed = parseEspnSummary(j);
