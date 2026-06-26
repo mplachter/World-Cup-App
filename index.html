@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.10.0';
+const APP_VERSION = 'v0.10.1';
 const BUILD_DATE = '2026-06-25';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -500,7 +500,49 @@ function parseEspnSummary(j){
       goals.push({minute, team: teamName, teamShort, scorer, ownGoal, penalty});
     }
   });
-  return {subs, cards, goals};
+  const lineups = parseEspnLineups(j, athleteMap);
+  return {subs, cards, goals, lineups};
+}
+
+// Extract starting XI + bench from j.rosters. ESPN shape varies; defensive parse.
+// Returns { home: {team, formation, starters[], bench[]}, away: {...} } or null per side.
+function parseEspnLineups(j, athleteMap){
+  const out = { home:null, away:null };
+  const rosters = (j && j.rosters) || [];
+  rosters.forEach(r=>{
+    if (!r) return;
+    const teamName = (r.team && (r.team.displayName || r.team.name)) || '';
+    const homeAway = (r.homeAway || '').toLowerCase(); // 'home' or 'away'
+    const formation = (r.formation && (r.formation.name || r.formation.text))
+                   || (r.team && r.team.formation)
+                   || '';
+    const list = r.roster || r.athletes || [];
+    const starters = [];
+    const bench = [];
+    list.forEach(p=>{
+      const athlete = p.athlete || p;
+      const name = athlete.displayName || athlete.fullName || athlete.shortName || athlete.name
+                || (athlete.id && athleteMap[String(athlete.id)])
+                || '';
+      const jersey = p.jersey || athlete.jersey || '';
+      const posObj = p.position || athlete.position || {};
+      const position = posObj.abbreviation || posObj.name || posObj.displayName || '';
+      const starter = p.starter === true || p.isStarter === true;
+      const subbedIn = p.subbedIn === true || p.didNotPlay === false && !starter;
+      const entry = { name, jersey, position, subbedIn };
+      if (starter) starters.push(entry);
+      else bench.push(entry);
+    });
+    const side = { team: teamName, formation, starters, bench };
+    if (homeAway === 'home') out.home = side;
+    else if (homeAway === 'away') out.away = side;
+    else {
+      // Fallback: fill home first, then away
+      if (!out.home) out.home = side;
+      else if (!out.away) out.away = side;
+    }
+  });
+  return out;
 }
 
 async function loadEspnSummary(eventId, force=false){
@@ -641,10 +683,13 @@ function matchCard(entry, todayISO, showSquads=true) {
     const subs = det.subs || [];
     const cards = det.cards || [];
     const espnGoals = det.goals || [];
+    const lineups = det.lineups || {};
+    const hasLineups = !!(lineups.home && lineups.home.starters && lineups.home.starters.length)
+                    || !!(lineups.away && lineups.away.starters && lineups.away.starters.length);
     // Only show ESPN goals when openfootball hasn't provided them yet (live games).
     // For completed matches openfootball goals already render at top of body.
     const showEspnGoals = espnGoals.length > 0 && goals1.length === 0 && goals2.length === 0;
-    if (!subs.length && !cards.length && !showEspnGoals) {
+    if (!subs.length && !cards.length && !showEspnGoals && !hasLineups) {
       eventsEl.appendChild(div({style:{fontSize:'11px',color:'#4b5563',fontStyle:'italic'}},'No events yet.'));
       return;
     }
@@ -699,6 +744,46 @@ function matchCard(entry, todayISO, showSquads=true) {
           span({style:{color:'#4b5563'}}, c.minute), ' ', c.player||'?', ' ',
           (c.type==='red'?'🟥':c.type==='yellowred'?'🟨🟥':'🟨')
         )))
+      ));
+    }
+    if (hasLineups) {
+      // Determine which lineup is home vs away — ESPN's homeAway may not match our openfootball
+      // home/away ordering, so re-map by team name.
+      let homeLU = lineups.home, awayLU = lineups.away;
+      if (homeLU && teamSide(homeLU.team) === 'away') { const tmp = homeLU; homeLU = awayLU; awayLU = tmp; }
+      // Group starters by position bucket (G / D / M / F) for readability
+      function bucketize(starters){
+        const buckets = {G:[], D:[], M:[], F:[], '':[]};
+        (starters||[]).forEach(p=>{
+          const pos = (p.position||'').toUpperCase();
+          let k = '';
+          if (pos.includes('G')) k = 'G';
+          else if (pos.startsWith('D') || pos === 'CB' || pos === 'LB' || pos === 'RB' || pos === 'LWB' || pos === 'RWB') k = 'D';
+          else if (pos.startsWith('M') || pos === 'CDM' || pos === 'CAM' || pos === 'CM') k = 'M';
+          else if (pos.startsWith('F') || pos === 'ST' || pos === 'CF' || pos === 'LW' || pos === 'RW') k = 'F';
+          buckets[k].push(p);
+        });
+        return ['G','D','M','F',''].flatMap(k=>buckets[k]);
+      }
+      function lineupCol(lu, align){
+        if (!lu) return div({style:{fontSize:'11px',color:'#4b5563',fontStyle:'italic',textAlign:align}}, '—');
+        const players = bucketize(lu.starters);
+        const rows = players.map(p=>div({style:{fontSize:'11px',color:'#9ca3af',lineHeight:'1.7',textAlign:align}},
+          align==='right'
+            ? [p.position?span({style:{color:'#4b5563',fontSize:'10px',marginRight:'4px'}}, p.position):null, p.name||'?', p.jersey?span({style:{color:'#4b5563',marginLeft:'4px'}}, '#'+p.jersey):null]
+            : [p.jersey?span({style:{color:'#4b5563',marginRight:'4px'}}, '#'+p.jersey):null, p.name||'?', p.position?span({style:{color:'#4b5563',fontSize:'10px',marginLeft:'4px'}}, p.position):null]
+        ));
+        return div({}, ...rows);
+      }
+      const homeFmt = (homeLU && homeLU.formation) || '';
+      const awayFmt = (awayLU && awayLU.formation) || '';
+      eventsEl.appendChild(div({style:{display:'flex',alignItems:'baseline',justifyContent:'space-between',marginBottom:'4px'}},
+        span({style:{fontSize:'10px',color:'#6b7280',fontWeight:600,letterSpacing:'0.5px',textTransform:'uppercase'}}, 'Starting XI'),
+        (homeFmt||awayFmt) ? span({style:{fontSize:'10px',color:'#4b5563'}}, (homeFmt||'?') + ' · ' + (awayFmt||'?')) : null
+      ));
+      eventsEl.appendChild(div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}},
+        lineupCol(homeLU, 'left'),
+        lineupCol(awayLU, 'right')
       ));
     }
   }
