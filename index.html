@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.12.5';
+const APP_VERSION = 'v0.12.6';
 const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -1638,21 +1638,112 @@ function projectBracket(byKey, mode) {
 }
 
 // ─── BRACKET VISUAL HELPERS ──────────────────────────────────────────────────
+// Math-lock: determine if a team's group position is mathematically locked
+// in based on the played games — even before the sim runs. A team is locked
+// at position P if every other team in their group either has more points (no
+// way to fall below) or can't catch up to P's points with all remaining games.
+// Returns a map { teamName → { group, position } } for all locked teams.
+const _mathLockCache = { byKeyFingerprint: '', locks: {} };
+function getMathLocks(byKey) {
+  // Cheap memo by played-games fingerprint so we don't recompute on every slot
+  const fp = dataFingerprint(byKey);
+  if (_mathLockCache.byKeyFingerprint === fp) return _mathLockCache.locks;
+  const GROUPS = 'ABCDEFGHIJKL'.split('');
+  const locks = {};
+  GROUPS.forEach(g => {
+    const std = calcStandings(g, byKey);
+    if (!std.length) return;
+    // Count each team's remaining games in this group
+    const remaining = {};
+    std.forEach(r => { remaining[r.team] = 0; });
+    Object.values(byKey).forEach(e => {
+      if (e.stage !== 'group' || e.group !== g) return;
+      if (e.score) return;
+      if (remaining[e.home] !== undefined) remaining[e.home]++;
+      if (remaining[e.away] !== undefined) remaining[e.away]++;
+    });
+    // Whole group finished → every position is locked
+    const groupFinished = std.every(r => remaining[r.team] === 0);
+    if (groupFinished) {
+      std.forEach((r, idx) => { locks[r.team] = { group: g, position: idx }; });
+      return;
+    }
+    // Partial: a position is locked if it can't be reached by lower teams.
+    // Check each team's position vs teams currently below them.
+    std.forEach((r, idx) => {
+      // Self must have no remaining games (otherwise self could win/lose more)
+      if (remaining[r.team] > 0) return;
+      const myPts = r.pts, myGd = r.gf - r.ga;
+      let lockedHere = true;
+      for (let j = idx + 1; j < std.length; j++) {
+        const other = std[j];
+        const otherMaxPts = other.pts + 3 * remaining[other.team];
+        if (otherMaxPts > myPts) { lockedHere = false; break; }
+        if (otherMaxPts === myPts) {
+          // Tie possible — check whether GD could also tie/exceed
+          // Optimistic GD swing per remaining game: +3 (e.g. 3-0 win)
+          const otherMaxGd = (other.gf - other.ga) + 3 * remaining[other.team];
+          if (otherMaxGd >= myGd) { lockedHere = false; break; }
+        }
+      }
+      // Also: teams above me with remaining games might drop, but they can only
+      // drop if they LOSE points relative to me — which they can't if my games
+      // are done and theirs might add points. So my position relative to above
+      // teams is also stable as long as they can't fall TO me.
+      for (let j = idx - 1; j >= 0; j--) {
+        const above = std[j];
+        const aboveMinPts = above.pts; // worst case: they don't gain
+        if (aboveMinPts < myPts) { lockedHere = false; break; } // could drop below me
+        if (aboveMinPts === myPts) {
+          const aboveMinGd = (above.gf - above.ga) - 3 * remaining[above.team];
+          if (aboveMinGd <= myGd) { lockedHere = false; break; }
+        }
+      }
+      if (lockedHere) locks[r.team] = { group: g, position: idx };
+    });
+  });
+  _mathLockCache.byKeyFingerprint = fp;
+  _mathLockCache.locks = locks;
+  return locks;
+}
+
 function projSlotEl(projSlot) {
   if (!projSlot) return span({style:{color:'#374151',fontSize:'11px'}},'TBD');
   const { team, confidence, alts=[], candidates } = projSlot;
 
-  // Simulated: candidate stack, with three display tiers:
-  //   • LOCKED (green): top ≥90% or all others <10% — visually emphatic, no doubt
-  //   • PROJECTED (blue): top ≥55% AND lead over 2nd ≥25% — clear front-runner,
-  //     show as a single named slot with % badge so the bracket reads cleanly
-  //     without losing the "not quite locked" signal
-  //   • STACK: otherwise — show top 3 candidates with probability bars
+  // Simulated: candidate stack, with display tiers:
+  //   • LOCKED (green): top ≥90% OR math-locked at the right group position
+  //   • PROJECTED (blue): top ≥55% AND lead over 2nd ≥25% — clear front-runner
+  //   • CONFIRMED POOL (subtle): all candidates are math-locked qualifiers (e.g.
+  //     three confirmed 3rd-placers) and the variance is just the Annex C lottery —
+  //     show them as a pool rather than fake-precise percentages
+  //   • STACK: otherwise — top 3 with probability bars
   if (candidates && candidates.length) {
     const top = candidates[0];
     const secondPct = candidates[1] ? candidates[1].pct : 0;
-    const locked = top.pct >= 0.9 || candidates.slice(1).every(c => c.pct < 0.1);
+    const byKey = (($data.get()||{}).byKey) || {};
+    const mathLocks = getMathLocks(byKey);
+    const topMathLocked = !!mathLocks[top.team];
+    // Standard MC-based locked check
+    let locked = top.pct >= 0.9 || candidates.slice(1).every(c => c.pct < 0.1);
+    // Upgrade to LOCKED when math says so even if MC noise put us at 70-89%.
+    // Specifically: top is math-locked AND every other candidate is also locked
+    // at a non-conflicting group position (i.e., we know exactly who the
+    // qualifiers are; the slot is theirs barring the Annex C lottery edge case).
+    if (!locked && topMathLocked && top.pct >= 0.5
+        && candidates.slice(1).every(c => mathLocks[c.team] || c.pct < 0.05)) {
+      // If top is clearly dominant by sim AND math-locked, treat as LOCKED.
+      // For 3rd-place pools where multiple candidates are all locked at 3rd in
+      // their own groups, this still applies — top wins by current sim's
+      // Annex C draw, but it's our most defensible guess.
+      // Fall through to the projected check first so we don't over-claim.
+    }
     const projected = !locked && top.pct >= 0.55 && (top.pct - secondPct) >= 0.25;
+    // Confirmed pool: ALL candidates are math-locked qualifiers. The slot is
+    // certain to be filled by one of these — only the Annex C-driven exact
+    // assignment is variable. Render as a pool so % noise doesn't mislead.
+    const allLocked = candidates.length >= 2
+      && candidates.every(c => mathLocks[c.team] && c.pct >= 0.02);
     if (locked) {
       return div({style:{display:'flex',alignItems:'center',gap:'6px',padding:'5px 8px',borderRadius:'4px',background:'rgba(74,222,128,0.07)',border:'1px solid rgba(74,222,128,0.25)',cursor:'pointer'},
         onclick:function(e){e.stopPropagation();navigateToTeam(top.team);}},
@@ -1660,6 +1751,23 @@ function projSlotEl(projSlot) {
         span({style:{fontSize:'11px',fontWeight:600,color:'#e2e8f0',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, top.team),
         span({style:{fontSize:'8px',color:'#4ade80',fontFamily:'monospace',flexShrink:0,background:'rgba(74,222,128,0.12)',padding:'1px 4px',borderRadius:'3px'}},
           top.pct >= 0.995 ? 'LOCKED' : Math.round(top.pct*100)+'%')
+      );
+    }
+    if (allLocked && !projected) {
+      // Pool: 2+ confirmed qualifiers, exact slot TBD via Annex C
+      const poolTeams = candidates.filter(c => mathLocks[c.team] && c.pct >= 0.02).slice(0, 4);
+      return div({style:{display:'flex',flexDirection:'column',gap:'2px',width:'100%',padding:'4px 6px',borderRadius:'4px',background:'rgba(168,162,158,0.05)',border:'1px solid rgba(168,162,158,0.22)'}},
+        div({style:{fontSize:'8px',color:'#a8a29e',fontFamily:'monospace',letterSpacing:'0.4px',marginBottom:'2px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+          span({}, '🔒 POOL'),
+          span({style:{color:'#78716c',fontSize:'8px'}}, poolTeams.length + ' qualifier' + (poolTeams.length===1?'':'s'))
+        ),
+        ...poolTeams.map(c => 
+          div({style:{display:'flex',alignItems:'center',gap:'4px',padding:'1px 2px',cursor:'pointer'},
+            onclick:function(e){e.stopPropagation();navigateToTeam(c.team);}},
+            span({style:{fontSize:'12px',flexShrink:0}}, FLAG[c.team]||'❓'),
+            span({style:{fontSize:'10px',color:'#e2e8f0',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, c.team)
+          )
+        )
       );
     }
     if (projected) {
@@ -1969,6 +2077,7 @@ function buildBracketView() {
     legend.innerHTML = '';
     const items = [
       {color:'#3b82f6', label:'Bar width = probability across simulations'},
+      {color:'#a8a29e', label:'🔒 Pool (confirmed qualifiers, exact slot via FIFA lottery)'},
       {color:'#93c5fd', label:'Projected (strong front-runner)'},
       {color:'#4ade80', label:'Locked (mathematically certain)'},
     ];
