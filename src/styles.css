@@ -1,0 +1,8 @@
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0a0f1e;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
+    button{cursor:pointer;font-family:inherit;border:none;outline:none}
+    input{font-family:inherit;outline:none}
+    .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .spin{animation:spin 1s linear infinite;display:inline-block}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
