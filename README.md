@@ -48,9 +48,9 @@ A live tracker for the 2026 FIFA World Cup — real-time scores, projected brack
 
 ## Tech stack
 
-- **Vanilla JavaScript** — no React, no Vue, no build step
+- **Vanilla TypeScript** — no React, no Vue; compiled via [Vite](https://vite.dev)
 - **Custom reactive layer** — ~50 lines of `createStore` / `persistedStore` / `persistedCache` doing all state management
-- **Single HTML file** — including embedded CSS
+- **`src/main.ts`** — all app logic; **`src/styles.css`** — all styles; **`index.html`** — shell only
 - **localStorage** for stateful preferences and stale-while-revalidate caching
 - **No external runtime dependencies**
 
@@ -104,12 +104,28 @@ All network fetches use `AbortSignal.timeout(8000)` so a hung CDN connection can
 ```bash
 git clone https://github.com/mplachter/World-Cup-App
 cd World-Cup-App
-# Open the HTML file in any modern browser, or serve via:
-python3 -m http.server 8080
-# then visit http://localhost:8080
+npm install
+npm run dev        # Vite dev server with HMR → http://localhost:5173
 ```
 
-No `npm install`, no build, no bundler. Edit the file, refresh.
+Other commands:
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Start dev server with hot module replacement |
+| `npm run build` | Production build → `dist/` |
+| `npm run preview` | Serve the `dist/` build locally |
+| `npm run typecheck` | TypeScript type check (`tsc --noEmit`) |
+| `npm run lint` | ESLint on `src/` |
+
+## CI/CD
+
+GitHub Actions runs on every push and PR:
+
+- **CI** (`.github/workflows/ci.yml`) — typecheck → lint → build on every push/PR to `main`
+- **Deploy** (`.github/workflows/deploy.yml`) — builds and deploys to GitHub Pages on push to `main`
+
+To enable GitHub Pages deployment: repo Settings → Pages → set Source to **GitHub Actions**.
 
 ---
 
