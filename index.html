@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.12.8';
+const APP_VERSION = 'v0.12.9';
 const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -927,12 +927,14 @@ function matchCard(entry, todayISO, showSquads=true) {
   // Resolve placeholder team names (e.g. "3B/E/F/I/J" for an R32 slot) into the
   // predicted real team using the same tiering logic as the bracket view. This
   // way the schedule and the bracket tell the same story.
+  // Note: simSide is the candidate array directly from sim.data[num].home/away,
+  // not the {candidates:[...]} shape that projSlotEl receives.
   function resolveDisplay(rawName, simSide) {
     if (FLAG[rawName]) return { display: rawName, isPredicted: false, alternates: [], orig: rawName, kind: 'real' };
-    if (!simSide || !simSide.candidates || !simSide.candidates.length) {
+    if (!simSide || !Array.isArray(simSide) || !simSide.length) {
       return { display: rawName, isPredicted: false, alternates: [], orig: rawName, kind: 'placeholder' };
     }
-    const cands = simSide.candidates;
+    const cands = simSide;
     const top = cands[0];
     const secondPct = cands[1] ? cands[1].pct : 0;
     const byKey = (($data.get()||{}).byKey) || {};
@@ -946,7 +948,7 @@ function matchCard(entry, todayISO, showSquads=true) {
       const pool = cands.filter(c => mathLocks[c.team] && c.pct >= 0.02);
       return { display: pool[0].team, isPredicted: true, alternates: pool.slice(1, 4).map(c=>c.team), orig: rawName, kind: 'pool' };
     }
-    // Stack / no strong signal: just show top sim candidate softly
+    // Stack / no strong signal: still show top sim candidate as a soft prediction
     return { display: top.team, isPredicted: true, alternates: [], orig: rawName, kind: 'stack', pct: top.pct };
   }
   const sim = $sim.get();
