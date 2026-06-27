@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.12.6';
+const APP_VERSION = 'v0.12.7';
 const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -1754,20 +1754,32 @@ function projSlotEl(projSlot) {
       );
     }
     if (allLocked && !projected) {
-      // Pool: 2+ confirmed qualifiers, exact slot TBD via Annex C
+      // Confirmed pool: 2+ math-locked qualifiers, exact slot TBD via Annex C.
+      // Commit to a prediction (top sim candidate) so the bracket flows as one
+      // coherent storyline, but surface the alternates compactly so it's clear
+      // the slot isn't truly locked.
       const poolTeams = candidates.filter(c => mathLocks[c.team] && c.pct >= 0.02).slice(0, 4);
-      return div({style:{display:'flex',flexDirection:'column',gap:'2px',width:'100%',padding:'4px 6px',borderRadius:'4px',background:'rgba(168,162,158,0.05)',border:'1px solid rgba(168,162,158,0.22)'}},
-        div({style:{fontSize:'8px',color:'#a8a29e',fontFamily:'monospace',letterSpacing:'0.4px',marginBottom:'2px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
-          span({}, '🔒 POOL'),
-          span({style:{color:'#78716c',fontSize:'8px'}}, poolTeams.length + ' qualifier' + (poolTeams.length===1?'':'s'))
+      const predicted = poolTeams[0];
+      const alternates = poolTeams.slice(1);
+      return div({style:{display:'flex',flexDirection:'column',gap:'2px',width:'100%'}},
+        // Predicted team — same visual weight as a projected row, different badge
+        div({style:{display:'flex',alignItems:'center',gap:'6px',padding:'5px 8px',borderRadius:'4px',background:'rgba(168,162,158,0.06)',border:'1px solid rgba(168,162,158,0.22)',cursor:'pointer'},
+          onclick:function(e){e.stopPropagation();navigateToTeam(predicted.team);}},
+          span({style:{fontSize:'14px',flexShrink:0}}, FLAG[predicted.team]||'❓'),
+          span({style:{fontSize:'11px',fontWeight:600,color:'#e2e8f0',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, predicted.team),
+          span({style:{fontSize:'8px',color:'#a8a29e',fontFamily:'monospace',flexShrink:0,background:'rgba(168,162,158,0.14)',padding:'1px 4px',borderRadius:'3px',letterSpacing:'0.3px'}}, 'PRED')
         ),
-        ...poolTeams.map(c => 
-          div({style:{display:'flex',alignItems:'center',gap:'4px',padding:'1px 2px',cursor:'pointer'},
-            onclick:function(e){e.stopPropagation();navigateToTeam(c.team);}},
-            span({style:{fontSize:'12px',flexShrink:0}}, FLAG[c.team]||'❓'),
-            span({style:{fontSize:'10px',color:'#e2e8f0',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, c.team)
+        // Alternates — compact pill row of confirmed alternatives
+        alternates.length ? div({style:{display:'flex',alignItems:'center',gap:'4px',padding:'2px 8px',fontSize:'9px',color:'#78716c'}},
+          span({}, 'or'),
+          ...alternates.map(c =>
+            span({style:{display:'inline-flex',alignItems:'center',gap:'3px',cursor:'pointer'},
+              onclick:function(e){e.stopPropagation();navigateToTeam(c.team);}},
+              span({style:{fontSize:'10px'}}, FLAG[c.team]||'❓'),
+              span({style:{color:'#a8a29e'}}, c.team)
+            )
           )
-        )
+        ) : null
       );
     }
     if (projected) {
@@ -2077,7 +2089,7 @@ function buildBracketView() {
     legend.innerHTML = '';
     const items = [
       {color:'#3b82f6', label:'Bar width = probability across simulations'},
-      {color:'#a8a29e', label:'🔒 Pool (confirmed qualifiers, exact slot via FIFA lottery)'},
+      {color:'#a8a29e', label:'PRED (predicted from confirmed-qualifier pool)'},
       {color:'#93c5fd', label:'Projected (strong front-runner)'},
       {color:'#4ade80', label:'Locked (mathematically certain)'},
     ];
@@ -2259,8 +2271,10 @@ function buildBracketView() {
             if (sibNum) {
               const sibSlots = getSlots(sibNum);
               // Match the same "looks locked" heuristic projSlotEl uses: either
-              // Match the same "looks locked or projected" heuristic projSlotEl uses:
-              // confirmed, dominant (≥90%), or projected (≥55% with ≥25% lead).
+              // Match the same lockable heuristics projSlotEl uses, plus pool
+              // prediction: when all candidates are math-locked qualifiers and
+              // we've committed to a PRED team in the visual, use that here so
+              // the forward-link chip flows with the same storyline.
               function effectiveTeam(slot) {
                 if (!slot) return null;
                 if (slot.confidence === 'confirmed' && slot.team && slot.team !== 'TBD') return slot.team;
@@ -2270,6 +2284,13 @@ function buildBracketView() {
                   const locked = top.pct >= 0.9 || slot.candidates.slice(1).every(c => c.pct < 0.1);
                   const projected = top.pct >= 0.55 && (top.pct - secondPct) >= 0.25;
                   if (locked || projected) return top.team;
+                  // Pool fallback: if all relevant candidates are math-locked
+                  // qualifiers, pick the top as the predicted opponent.
+                  const byKey = (($data.get()||{}).byKey) || {};
+                  const ml = getMathLocks(byKey);
+                  const allLocked = slot.candidates.length >= 2
+                    && slot.candidates.every(c => ml[c.team] && c.pct >= 0.02);
+                  if (allLocked) return top.team;
                 }
                 return null;
               }
