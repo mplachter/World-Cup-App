@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.12.10';
+const APP_VERSION = 'v0.12.11';
 const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -1454,7 +1454,7 @@ const R32_STRUCTURE = [
 const $sim = createStore({ status:'idle', data:null, trials:0, completed:0, elapsedMs:0, key:'', cachedKey:'' });
 const SIM_TRIALS_DEFAULT = 5000;
 const SIM_CHUNK = 250;
-const SIM_LS_KEY = 'wc2026:sim:v3'; // v3: post-pass strips locked teams from non-dominant slots
+const SIM_LS_KEY = 'wc2026:sim:v4'; // v4: also dedups top-of-slot teams across slots
 let _simCancelled = false;
 
 function loadCachedSim() {
@@ -1584,6 +1584,52 @@ async function startSimulation(byKey, trials) {
       sides[side] = sides[side].filter(c => !lockedTeams.has(c.team));
     });
   });
+
+  // Third post-pass: dedup the TOP candidate across slots. A real team can only
+  // be in one R32 slot — if the sim has them as the most-likely candidate in
+  // multiple slots (because they were heavily favored to advance but the cross-
+  // group lottery split their probability mass across several positions), keep
+  // them as #1 only in the slot where their pct is highest and remove them
+  // from the candidate list of the others. Iterate so the cascade settles:
+  // after Paraguay drops out of M77, Sweden becomes M77's top — but Sweden
+  // might also be top elsewhere, etc.
+  let changed = true;
+  let safety = 0;
+  while (changed && safety < 20) {
+    changed = false;
+    safety++;
+    // Find each team's best (slot, pct) where they're #1
+    const bestTopSlot = {};
+    Object.entries(out).forEach(([num, sides]) => {
+      ['home','away'].forEach(side => {
+        const cands = sides[side];
+        if (!cands || !cands.length) return;
+        if (isDominant(cands)) return; // locked → already unique, untouchable
+        const top = cands[0];
+        const slotKey = num + '-' + side;
+        if (!bestTopSlot[top.team] || top.pct > bestTopSlot[top.team].pct) {
+          bestTopSlot[top.team] = { slotKey, pct: top.pct };
+        }
+      });
+    });
+    // Demote teams from slots where they're #1 but not their best
+    Object.entries(out).forEach(([num, sides]) => {
+      ['home','away'].forEach(side => {
+        const cands = sides[side];
+        if (!cands || !cands.length) return;
+        if (isDominant(cands)) return;
+        const top = cands[0];
+        const slotKey = num + '-' + side;
+        const best = bestTopSlot[top.team];
+        if (best && best.slotKey !== slotKey) {
+          // Strip this team from this slot entirely so the next candidate
+          // becomes the new top.
+          sides[side] = cands.filter(c => c.team !== top.team);
+          changed = true;
+        }
+      });
+    });
+  }
 
   const elapsedMs = Math.round(performance.now() - t0);
   const savedAt = Date.now();
