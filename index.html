@@ -22,7 +22,7 @@
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
 // both. Pattern: vMAJOR.MINOR.PATCH — semver-ish, no formal contract.
-const APP_VERSION = 'v0.12.9';
+const APP_VERSION = 'v0.12.10';
 const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
@@ -988,8 +988,8 @@ function matchCard(entry, todayISO, showSquads=true) {
   let suspensionsHasContent = false;
   function renderSuspensions(){
     if (!isUpcoming) { suspensionsEl.innerHTML=''; return; }
-    const sH = computeSuspensions(home, date, stage);
-    const sA = computeSuspensions(away, date, stage);
+    const sH = computeSuspensions(homeD.display, date, stage);
+    const sA = computeSuspensions(awayD.display, date, stage);
     const anyContent = sH.suspended.length || sA.suspended.length
                     || sH.onYellow.length || sA.onYellow.length;
     if (!anyContent) {
@@ -1180,7 +1180,7 @@ function matchCard(entry, todayISO, showSquads=true) {
     // degrade gracefully.
     if (showSquads) {
       const squadsGrid = div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}},
-        ...[home,away].map(team=>div({style:{minWidth:0}},
+        ...[homeD.display, awayD.display].map(team=>div({style:{minWidth:0}},
           div({style:{display:'flex',alignItems:'center',gap:'6px',marginBottom:'8px'}},
             span({style:{fontSize:'18px'}},FLAG[team]||'🏳'),
             span({style:{fontSize:'11px',fontWeight:600,color:'#e2e8f0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},team),
@@ -1241,7 +1241,7 @@ function matchCard(entry, todayISO, showSquads=true) {
           // Subscribe so the section fills in as prefetched summaries arrive
           if (!unsubDetails) unsubDetails = $espnDetails.sub(()=>renderSuspensions());
           // Fire-and-forget prefetch; cached summaries are free, only misses hit ESPN
-          prefetchSuspensionData(home, away, date);
+          prefetchSuspensionData(homeD.display, awayD.display, date);
         }
         // Smooth-scroll the card header into view so the user doesn't lose context
         // when expanding cards near the bottom of the viewport on mobile.
