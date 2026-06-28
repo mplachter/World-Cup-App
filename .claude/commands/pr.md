@@ -1,5 +1,6 @@
 ---
 model: claude-haiku-4-5-20251001
+allowed-tools: Bash
 ---
 
 Open a pull request for the current branch with a simple summary of the changes.
