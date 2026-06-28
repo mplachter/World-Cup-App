@@ -1,5 +1,5 @@
 import './styles.css';
-import type { Store, Cache, CacheOpts, Match, MatchData, EspnEntry, EspnDetail, Player, Standing } from './types';
+import type { Store, Cache, CacheOpts, Children, Match, MatchData, EspnEntry, EspnDetail, Player, Standing } from './types';
 
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
@@ -114,7 +114,8 @@ function persistedCache<T = unknown>(prefix: string, opts?: CacheOpts): Cache<T>
 }
 
 
-const ce = (tag: string, attrs?: Record<string, unknown> | null, ...children: unknown[]): HTMLElement => {
+type Attrs = Record<string, unknown> | null | undefined;
+const ce = (tag: string, attrs?: Attrs, ...children: Children[]): HTMLElement => {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
     if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
@@ -130,17 +131,17 @@ const ce = (tag: string, attrs?: Record<string, unknown> | null, ...children: un
   }
   return el;
 };
-const div = (a,...c) => ce('div',a,...c);
-const span = (a,...c) => ce('span',a,...c);
-const btn = (a,...c) => ce('button',a,...c);
-const inp = (a: Record<string, unknown>) => ce('input',a) as HTMLInputElement;
-const svg = (attrs: Record<string, unknown>, ...c: unknown[]) => {
+const div  = (a: Attrs, ...c: Children[]) => ce('div', a, ...c);
+const span = (a: Attrs, ...c: Children[]) => ce('span', a, ...c);
+const btn  = (a: Attrs, ...c: Children[]) => ce('button', a, ...c);
+const inp  = (a: Attrs) => ce('input', a) as HTMLInputElement;
+const svg  = (attrs: Attrs, ...c: Children[]) => {
   const el = document.createElementNS('http://www.w3.org/2000/svg','svg');
   for(const [k,v] of Object.entries(attrs||{})) el.setAttribute(k, String(v));
   (c as unknown[]).flat().forEach(ch => { if(ch) el.appendChild(ch as Node); });
   return el;
 };
-const path = (attrs: Record<string, unknown>) => {
+const path = (attrs: Attrs) => {
   const el = document.createElementNS('http://www.w3.org/2000/svg','path');
   for(const [k,v] of Object.entries(attrs||{})) el.setAttribute(k, String(v));
   return el;
@@ -317,7 +318,7 @@ async function fetchJsonAny(urls: string[], timeoutMs = 8000) {
   const tryOne = (url: string) => {
     const init: RequestInit = { cache: 'no-cache' };
     // AbortSignal.timeout is supported in Chrome 103+/Safari 16+/Firefox 100+
-    try { init.signal = AbortSignal.timeout(timeoutMs); } catch(e) {}
+    try { init.signal = AbortSignal.timeout(timeoutMs); } catch {}
     return fetch(url, init).then(r => {
       if (!r.ok) throw new Error('HTTP '+r.status+' from '+url);
       return r.json();
@@ -342,7 +343,7 @@ async function loadData(){
     $status.set("done");
     scheduleCache.set('current', j);
   } catch (e) {
-    console.warn('[loadData] all sources failed:', e && e.message);
+    console.warn('[loadData] all sources failed:', e instanceof Error ? e.message : String(e));
     if (!cached) $status.set("error"); // only flip to error if we never had anything
   }
 }
@@ -391,7 +392,7 @@ async function loadSquads(){
     $squads.set({loaded:true, count:Object.keys(SQUADS).length});
     squadsCache.set('current', j);
   } catch (e) {
-    console.warn('[loadSquads] all sources failed:', e && e.message);
+    console.warn('[loadSquads] all sources failed:', e instanceof Error ? e.message : String(e));
     if (!cached) $squads.set({loaded:false, count:0, error:true});
   }
 }
@@ -426,7 +427,7 @@ async function loadESPN(){
   try{
     const url="https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=200&dates=20260611-20260719";
     const init: RequestInit={cache:"no-cache"};
-    try { init.signal = AbortSignal.timeout(8000); } catch(e){}
+    try { init.signal = AbortSignal.timeout(8000); } catch {}
     const r=await fetch(url,init);
     if(!r.ok)throw new Error("HTTP "+r.status);
     const j=await r.json();
@@ -471,7 +472,7 @@ async function loadESPN(){
     $espn.set(map);
     $espnStatus.set(hasLive?"live":"idle");
   }catch(e){
-    console.warn("[ESPN]",e.message);
+    console.warn("[ESPN]", e instanceof Error ? e.message : String(e));
     $espnStatus.set("error");
   }
 }
@@ -688,7 +689,7 @@ async function loadEspnSummary(eventId, force=false){
   try{
     const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${eventId}`;
     const init: RequestInit = {cache:'no-cache'};
-    try { init.signal = AbortSignal.timeout(8000); } catch(e){}
+    try { init.signal = AbortSignal.timeout(8000); } catch {}
     const r = await fetch(url,init);
     if(!r.ok) throw new Error('HTTP '+r.status);
     const j = await r.json();
@@ -709,9 +710,10 @@ async function loadEspnSummary(eventId, force=false){
       });
     }
   }catch(e){
-    console.warn('[ESPN summary]', eventId, e.message);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn('[ESPN summary]', eventId, msg);
     const cur2 = $espnDetails.get();
-    $espnDetails.set({...cur2, [eventId]: {...(cur2[eventId]||{subs:[],cards:[],goals:[]}), loading:false, error:e.message}});
+    $espnDetails.set({...cur2, [eventId]: {...(cur2[eventId]||{subs:[],cards:[],goals:[]}), loading:false, error:msg}});
   }
 }
 
@@ -1230,7 +1232,7 @@ function matchCard(entry, todayISO, showSquads=true) {
             if (r.top < 64 || r.top > window.innerHeight - 120) {
               card.scrollIntoView({behavior:'smooth', block:'start'});
             }
-          } catch(e){}
+          } catch {}
         }, 30);
       } else {
         if (bodyEl.parentNode===card) card.removeChild(bodyEl);
@@ -1964,11 +1966,11 @@ function loadCachedSim() {
     if (!raw) return null;
     const obj = JSON.parse(raw);
     if (obj && obj.data && obj.key) return obj;
-  } catch (e) {}
+  } catch {}
   return null;
 }
 function saveCachedSim(payload) {
-  try { localStorage.setItem(SIM_LS_KEY, JSON.stringify(payload)); } catch (e) {}
+  try { localStorage.setItem(SIM_LS_KEY, JSON.stringify(payload)); } catch {}
 }
 
 function dataFingerprint(byKey: Record<string, Match>) {

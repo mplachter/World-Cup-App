@@ -1,3 +1,8 @@
+// ─── DOM HELPERS ─────────────────────────────────────────────────────────────
+
+export type Child = HTMLElement | SVGElement | string | number | null | false;
+export type Children = Child | Children[];
+
 // ─── REACTIVE STORE ──────────────────────────────────────────────────────────
 
 export interface Store<T> {
