@@ -4,6 +4,7 @@ import { GROUPS, pkey, calcStandings, FLAG } from '../constants';
 import { $data, $today, navigateToTeam } from '../state';
 import { useStore } from '../hooks/useStore';
 import { MatchCard } from './matchCard';
+import { FilterButton } from '../design/components';
 
 const GROUPS_LIST = 'ABCDEFGHIJKL'.split('');
 
@@ -90,19 +91,14 @@ export function GroupsView() {
       {/* Group selector */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
         {GROUPS_LIST.map(grp => (
-          <button
+          <FilterButton
             key={grp}
+            active={grp === activeGroup}
             onClick={() => setActiveGroup(grp)}
-            style={{
-              width: '36px', height: '36px', borderRadius: '8px', fontSize: '14px', fontWeight: '700',
-              background: grp === activeGroup ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.05)',
-              border: grp === activeGroup ? '1px solid rgba(59,130,246,0.6)' : '1px solid rgba(255,255,255,0.1)',
-              color: grp === activeGroup ? '#93c5fd' : '#94a3b8',
-              cursor: 'pointer',
-            }}
+            style={{ width: '36px', height: '36px', fontSize: '14px', fontWeight: '700', padding: 0 }}
           >
             {grp}
-          </button>
+          </FilterButton>
         ))}
       </div>
 
