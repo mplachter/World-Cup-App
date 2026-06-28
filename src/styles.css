@@ -1,3 +1,31 @@
+    :root {
+      --c-muted:     #6b7280;
+      --c-dim:       #4b5563;
+      --c-secondary: #9ca3af;
+      --c-primary:   #e2e8f0;
+      --c-accent:    #3b82f6;
+      --c-live:      #f87171;
+      --c-today:     #fbbf24;
+      --c-success:   #4ade80;
+
+      --gap-xs:  4px;
+      --gap-sm:  8px;
+      --gap-md:  12px;
+      --gap-lg:  16px;
+      --gap-xl:  24px;
+
+      --r-sm:    4px;
+      --r-md:    8px;
+      --r-lg:    10px;
+
+      --fs-xs:   9px;
+      --fs-sm:   10px;
+      --fs-base: 11px;
+      --fs-md:   12px;
+      --fs-body: 13px;
+      --fs-lg:   14px;
+    }
+
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#0a0f1e;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
     button{cursor:pointer;font-family:inherit;border:none;outline:none}
