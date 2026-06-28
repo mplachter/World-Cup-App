@@ -13,6 +13,11 @@ export const $showCompleted = persistedStore<boolean>('wc2026:showCompleted', fa
 // Per-day collapse state — only collapsed days stored, keeping the blob small.
 export const $collapsedDays = persistedStore<Record<string, boolean>>('wc2026:collapsedDays:v1', {},
   v => v !== null && typeof v === 'object' && !Array.isArray(v));
+// Schedule filter state — survives tab switches and full rebuilds.
+export const $scheduleStageFilter = persistedStore<string>('wc2026:scheduleStageFilter', 'all',
+  v => typeof v === 'string');
+export const $scheduleTeamFilter = persistedStore<string>('wc2026:scheduleTeamFilter', '',
+  v => typeof v === 'string');
 
 // ─── PERSISTENT CACHES ────────────────────────────────────────────────────────
 // Declared here so data/espn modules can reference them synchronously at
