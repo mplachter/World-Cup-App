@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
+import { navigate } from '../router';
 import { FIFA, FLAG, LEAGUES, LC, GROUPS, pkey, calcStandings, parseScore, getLC } from '../constants';
-import { $data, $selectedTeam, $squads, SQUADS, navigateToTeam } from '../state';
+import { $data, $squads, SQUADS, navigateToTeam } from '../state';
 import { $sim } from '../simulation';
 import { useStore } from '../hooks/useStore';
 import { HTMLEl } from './HTMLEl';
@@ -49,7 +50,7 @@ function TeamDetailView({ team }: TeamDetailProps) {
   return (
     <div>
       <button
-        onClick={() => $selectedTeam.set(null)}
+        onClick={() => navigate('/teams')}
         style={{ padding: '5px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af', fontSize: '12px', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', marginBottom: '14px' }}
       >
         ← Back to teams
@@ -223,7 +224,7 @@ function TeamListView() {
           return (
             <div
               key={team}
-              onClick={() => $selectedTeam.set(team)}
+              onClick={() => navigate('/teams/' + encodeURIComponent(team))}
               style={{ borderRadius: '8px', cursor: 'pointer', marginBottom: '6px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
               onMouseOver={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.06)'; (e.currentTarget as HTMLElement).style.border = '1px solid rgba(59,130,246,0.25)'; }}
               onMouseOut={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)'; (e.currentTarget as HTMLElement).style.border = '1px solid rgba(255,255,255,0.06)'; }}
@@ -248,8 +249,10 @@ function TeamListView() {
 }
 
 export function TeamsView() {
-  const selectedTeam = useStore($selectedTeam);
-  return selectedTeam
-    ? <TeamDetailView team={selectedTeam} />
-    : <TeamListView />;
+  return <TeamListView />;
+}
+
+export function TeamDetailPage({ team }: { team?: string }) {
+  if (!team) return <TeamListView />;
+  return <TeamDetailView team={decodeURIComponent(team)} />;
 }

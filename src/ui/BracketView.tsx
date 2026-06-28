@@ -6,6 +6,7 @@ import { $data, $today, $status, navigateToTeam } from '../state';
 import { $espn } from '../state';
 import { $sim, SIM_TRIALS_DEFAULT, startSimulation, cancelSimulation, projectBracket, getMathLocks, dataFingerprint } from '../simulation';
 import { useStore } from '../hooks/useStore';
+import { FilterButton } from '../design/components';
 
 // ─── BRACKET LAYOUT GEOMETRY ──────────────────────────────────────────────────
 const BRACKET_BASE_SH = 130;
@@ -524,19 +525,9 @@ export function BracketView() {
       {/* View selector */}
       <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
         {VIEWS.map(v => (
-          <button
-            key={v.id}
-            onClick={() => setView(v.id)}
-            style={{
-              padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 500,
-              background: view === v.id ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.05)',
-              border: view === v.id ? '1px solid rgba(59,130,246,0.6)' : '1px solid rgba(255,255,255,0.1)',
-              color: view === v.id ? '#93c5fd' : '#94a3b8',
-              cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
+          <FilterButton key={v.id} active={view === v.id} onClick={() => setView(v.id)}>
             {v.l}
-          </button>
+          </FilterButton>
         ))}
       </div>
 

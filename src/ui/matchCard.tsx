@@ -1,7 +1,7 @@
 import { useState, useEffect as preactUseEffect } from 'preact/hooks';
 import type { Match } from '../types';
 import { FIFA, FLAG, pkey, parseScore, norm, espnNorm } from '../constants';
-import { $data, $espn, $espnDetails, $selectedTeam, $tab, navigateToTeam } from '../state';
+import { $data, $espn, $espnDetails, navigateToTeam } from '../state';
 import { loadEspnSummary } from '../espn';
 import { computeSuspensions } from '../suspensions';
 import { $sim, getMathLocks } from '../simulation';
@@ -334,7 +334,7 @@ export function MatchCard({ entry, todayISO, showSquads = true }: MatchCardProps
           {/* Home */}
           <div
             style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, cursor: FLAG[homeD.display] ? 'pointer' : undefined }}
-            onClick={(e) => { e.stopPropagation(); if (FLAG[homeD.display]) { $selectedTeam.set(homeD.display); $tab.set('teams'); } }}
+            onClick={(e) => { e.stopPropagation(); navigateToTeam(homeD.display); }}
           >
             <span style={{ fontSize: '22px', flexShrink: 0 }}>{FLAG[homeD.display] || '🏳'}</span>
             <div style={{ minWidth: 0 }}>
@@ -352,7 +352,7 @@ export function MatchCard({ entry, todayISO, showSquads = true }: MatchCardProps
           {/* Away */}
           <div
             style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, justifyContent: 'flex-end', cursor: FLAG[awayD.display] ? 'pointer' : undefined }}
-            onClick={(e) => { e.stopPropagation(); if (FLAG[awayD.display]) { $selectedTeam.set(awayD.display); $tab.set('teams'); } }}
+            onClick={(e) => { e.stopPropagation(); navigateToTeam(awayD.display); }}
           >
             <div style={{ minWidth: 0, textAlign: 'right' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0, justifyContent: 'flex-end' }}>

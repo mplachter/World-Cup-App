@@ -1,4 +1,5 @@
 import { createStore, persistedStore, persistedCache } from './store';
+import { navigate as _navigate } from './router';
 import type { MatchData, EspnEntry, EspnDetail, Player } from './types';
 import { FLAG } from './constants';
 
@@ -61,8 +62,7 @@ export const $espnDetails = createStore<Record<string, EspnDetail>>({});
 
 export function navigateToTeam(teamName: string | null) {
   if (!teamName || teamName === 'TBD') return;
-  $selectedTeam.set(teamName);
-  $tab.set('teams');
+  _navigate('/teams/' + encodeURIComponent(teamName));
 }
 
 export function clickableTeam(el: HTMLElement, teamName: string | null): HTMLElement {
