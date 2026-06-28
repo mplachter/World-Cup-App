@@ -6,11 +6,11 @@ const BUILD_DATE = '2026-06-26';
 
 import { loadData, loadSquads } from './data';
 import { loadESPN } from './espn';
-import { buildFeedStatus, buildScheduleView } from './ui/schedule';
 import { buildGroupsView } from './ui/groups';
 import { buildBracketView } from './ui/bracket';
 import { buildTeamsView } from './ui/teams';
-import { $data, $espn, $tab } from './state';
+import { ScheduleView } from './ui/ScheduleView';
+import { $data, $espn, $tab, $today } from './state';
 import { useStore } from './hooks/useStore';
 import { LegacyView } from './ui/LegacyView';
 
@@ -152,15 +152,6 @@ function ContentArea({ tab, data, espn, sim }: ContentAreaProps) {
     teams: '768px',
   };
 
-  const viewMap: Record<string, { build: () => HTMLElement; deps: any[] }> = {
-    schedule: { build: buildScheduleView, deps: [data, espn] },
-    groups: { build: buildGroupsView, deps: [data, espn] },
-    bracket: { build: buildBracketView, deps: [data, espn, sim] },
-    teams: { build: buildTeamsView, deps: [data, espn] },
-  };
-
-  const view = viewMap[tab] || viewMap.schedule;
-
   return (
     <div
       style={{
@@ -168,8 +159,10 @@ function ContentArea({ tab, data, espn, sim }: ContentAreaProps) {
         margin: '0 auto',
       }}
     >
-      <LegacyView build={buildFeedStatus} deps={[data, espn]} />
-      <LegacyView key={tab} build={view.build} deps={[...view.deps, tab]} />
+      {tab === 'schedule' && <ScheduleView />}
+      {tab === 'groups' && <LegacyView build={buildGroupsView} deps={[data, espn]} />}
+      {tab === 'bracket' && <LegacyView build={buildBracketView} deps={[data, espn, sim]} />}
+      {tab === 'teams' && <LegacyView build={buildTeamsView} deps={[data, espn]} />}
     </div>
   );
 }
