@@ -1,5 +1,5 @@
-// @ts-nocheck — JS→TS migration in progress; remove this line as types are added
 import './styles.css';
+import type { Store, Cache, CacheOpts, Match, MatchData, EspnEntry, EspnDetail, Player, Standing } from './types';
 
 // ─── VERSION ─────────────────────────────────────────────────────────────────
 // Bump APP_VERSION on each deploy so you can tell what's live. Footer shows
@@ -8,16 +8,16 @@ const APP_VERSION = 'v0.13.0';
 const BUILD_DATE = '2026-06-26';
 
 // ─── TINY REACTIVE UI — no build tools, no CDN frameworks ────────────────────
-const _subs = new Map();
+const _subs = new Map<number, Set<(s: unknown) => void>>();
 let _uid = 0;
-function createStore(init) {
+function createStore<T>(init: T): Store<T> {
   let state = init;
   const id = _uid++;
   _subs.set(id, new Set());
   return {
     get: () => state,
-    set: (next) => { state = typeof next === 'function' ? next(state) : next; _subs.get(id).forEach(fn => fn(state)); },
-    sub: (fn) => { _subs.get(id).add(fn); return () => _subs.get(id).delete(fn); },
+    set: (next) => { state = typeof next === 'function' ? (next as (prev: T) => T)(state) : next; _subs.get(id)!.forEach(fn => fn(state)); },
+    sub: (fn) => { _subs.get(id)!.add(fn as (s: unknown) => void); return () => _subs.get(id)!.delete(fn as (s: unknown) => void); },
   };
 }
 
@@ -26,13 +26,13 @@ function createStore(init) {
 // stale/invalid persisted values (e.g. an old tab id that was renamed) and
 // falls back to the default. Storage failures (private mode, quota) silently
 // degrade to in-memory only.
-function persistedStore(key, defaultValue, validate) {
+function persistedStore<T>(key: string, defaultValue: T, validate?: (v: unknown) => boolean): Store<T> {
   let initial = defaultValue;
   try {
     const raw = localStorage.getItem(key);
     if (raw !== null) {
-      const parsed = JSON.parse(raw);
-      if (!validate || validate(parsed)) initial = parsed;
+      const parsed: unknown = JSON.parse(raw);
+      if (!validate || validate(parsed)) initial = parsed as T;
     }
   } catch {}
   const store = createStore(initial);
@@ -46,7 +46,7 @@ function persistedStore(key, defaultValue, validate) {
 // Entries stored as JSON: { v: value, ts: writeTime, exp: expireTime|0 }.
 // On QuotaExceededError, evicts oldest 20% of entries in this prefix and retries.
 // gc() on init removes expired entries to keep the store tidy.
-function persistedCache(prefix, opts) {
+function persistedCache<T = unknown>(prefix: string, opts?: CacheOpts): Cache<T> {
   opts = opts || {};
   const ttl = opts.ttl || Infinity; // milliseconds
   const maxEntries = opts.maxEntries || 200;
@@ -81,11 +81,11 @@ function persistedCache(prefix, opts) {
   }
   gc();
   return {
-    get(id) {
+    get(id: string): T | null {
       try {
         const raw = localStorage.getItem(keyFor(id));
         if (!raw) return null;
-        const obj = JSON.parse(raw);
+        const obj: { v: T; exp: number } = JSON.parse(raw);
         if (obj.exp && Date.now() > obj.exp) {
           localStorage.removeItem(keyFor(id));
           return null;
@@ -93,17 +93,17 @@ function persistedCache(prefix, opts) {
         return obj.v;
       } catch { return null; }
     },
-    set(id, value, overrideTtl) {
+    set(id: string, value: T, overrideTtl?: number): void {
       const t = (overrideTtl === undefined) ? ttl : overrideTtl;
       const obj = { v: value, ts: Date.now(), exp: t === Infinity ? 0 : Date.now() + t };
       const json = JSON.stringify(obj);
       try { localStorage.setItem(keyFor(id), json); }
       catch (e) {
-        if (e && e.name === 'QuotaExceededError') {
+        if (e instanceof Error && e.name === 'QuotaExceededError') {
           console.warn('[cache]', prefix, 'quota hit, evicting');
           evictOldest(Math.ceil(maxEntries * 0.2));
           try { localStorage.setItem(keyFor(id), json); }
-          catch (e2) { console.warn('[cache]', prefix, 'persist failed after eviction:', e2.message); }
+          catch (e2) { console.warn('[cache]', prefix, 'persist failed after eviction:', (e2 as Error).message); }
         }
       }
     },
@@ -114,35 +114,35 @@ function persistedCache(prefix, opts) {
 }
 
 
-const ce = (tag, attrs, ...children) => {
+const ce = (tag: string, attrs?: Record<string, unknown> | null, ...children: unknown[]): HTMLElement => {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
     if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
-    else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
-    else if (k === 'className') el.className = v;
-    else if (k === 'id') el.id = v;
-    else if (k === 'value') el.value = v;
-    else if (k !== 'key') el.setAttribute(k, v);
+    else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v as EventListener);
+    else if (k === 'className') el.className = v as string;
+    else if (k === 'id') el.id = v as string;
+    else if (k === 'value') (el as HTMLInputElement).value = v as string;
+    else if (k !== 'key') el.setAttribute(k, String(v));
   }
-  for (const ch of children.flat(Infinity)) {
+  for (const ch of (children as unknown[]).flat(Infinity)) {
     if (ch == null || ch === false) continue;
-    el.appendChild(typeof ch === 'string' || typeof ch === 'number' ? document.createTextNode(ch) : ch);
+    el.appendChild(typeof ch === 'string' || typeof ch === 'number' ? document.createTextNode(String(ch)) : ch as Node);
   }
   return el;
 };
 const div = (a,...c) => ce('div',a,...c);
 const span = (a,...c) => ce('span',a,...c);
 const btn = (a,...c) => ce('button',a,...c);
-const inp = (a) => ce('input',a);
-const svg = (attrs, ...c) => {
+const inp = (a: Record<string, unknown>) => ce('input',a) as HTMLInputElement;
+const svg = (attrs: Record<string, unknown>, ...c: unknown[]) => {
   const el = document.createElementNS('http://www.w3.org/2000/svg','svg');
-  for(const [k,v] of Object.entries(attrs||{})) el.setAttribute(k,v);
-  c.flat().forEach(ch => { if(ch) el.appendChild(ch); });
+  for(const [k,v] of Object.entries(attrs||{})) el.setAttribute(k, String(v));
+  (c as unknown[]).flat().forEach(ch => { if(ch) el.appendChild(ch as Node); });
   return el;
 };
-const path = (attrs) => {
+const path = (attrs: Record<string, unknown>) => {
   const el = document.createElementNS('http://www.w3.org/2000/svg','path');
-  for(const [k,v] of Object.entries(attrs||{})) el.setAttribute(k,v);
+  for(const [k,v] of Object.entries(attrs||{})) el.setAttribute(k, String(v));
   return el;
 };
 
@@ -209,8 +209,8 @@ const SQUAD_NAME_NORM = {
 };
 
 // Squads — populated at runtime from openfootball
-let SQUADS = {};
-const $squads = createStore({ loaded: false, count: 0 });
+let SQUADS: Record<string, Player[]> = {};
+const $squads = createStore<{ loaded: boolean; count: number; error?: boolean }>({ loaded: false, count: 0 });
 
 // ─── FEED ────────────────────────────────────────────────────────────────────
 const NORM={"Bosnia & Herzegovina":"Bosnia and Herzegovina","United States":"USA","Côte d'Ivoire":"Ivory Coast","Korea Republic":"South Korea"};
@@ -247,24 +247,24 @@ function processRaw(json){const byKey={},byNum={},all=[];(json.matches||[]).forE
 // stale id (e.g. 'rankings' from before the Teams rename) falls back to the
 // default rather than rendering nothing.
 const VALID_TABS = ['schedule', 'groups', 'bracket', 'teams'];
-const $tab = persistedStore('wc2026:tab', 'schedule', v => VALID_TABS.includes(v));
-const $selectedTeam = persistedStore('wc2026:selectedTeam', null,
+const $tab = persistedStore<string>('wc2026:tab', 'schedule', v => VALID_TABS.includes(v as string));
+const $selectedTeam = persistedStore<string | null>('wc2026:selectedTeam', null,
   v => v === null || typeof v === 'string');
 // Schedule view: keep completed matches hidden by default but remember the
 // user's preference if they expand them. Most-used page → less scroll matters.
-const $showCompleted = persistedStore('wc2026:showCompleted', false,
+const $showCompleted = persistedStore<boolean>('wc2026:showCompleted', false,
   v => typeof v === 'boolean');
 // Per-day collapse state on the schedule view. Map of { 'YYYY-MM-DD': true } —
 // only collapsed days are stored, keeping the blob small. TODAY is never
 // collapsible; UPCOMING and COMPLETED day headers tap to toggle.
-const $collapsedDays = persistedStore('wc2026:collapsedDays:v1', {},
-  v => v && typeof v === 'object' && !Array.isArray(v));
+const $collapsedDays = persistedStore<Record<string, boolean>>('wc2026:collapsedDays:v1', {},
+  v => v !== null && typeof v === 'object' && !Array.isArray(v));
 
 // Persistent caches — declared up here (above any load* function call) so the
 // load functions can reference them synchronously without hitting the temporal
 // dead zone. ESPN summaries for completed matches are static and large, so we
 // cache them forever; openfootball schedule/squads use TTL stale-while-revalidate.
-const espnSummaryCache = persistedCache('wc2026:cache:espn:summary:v1', { maxEntries: 150 });
+const espnSummaryCache = persistedCache<EspnDetail>('wc2026:cache:espn:summary:v1', { maxEntries: 150 });
 const scheduleCache    = persistedCache('wc2026:cache:openfootball:schedule:v1', { ttl: 30*60*1000, maxEntries: 4 });
 const squadsCache      = persistedCache('wc2026:cache:openfootball:squads:v1',   { ttl: 24*60*60*1000, maxEntries: 4 });
 
@@ -286,8 +286,8 @@ function clickableTeam(el, teamName) {
   el.addEventListener('click', (e) => { e.stopPropagation(); navigateToTeam(teamName); });
   return el;
 }
-const $data   = createStore(null);
-const $status = createStore("loading");
+const $data   = createStore<MatchData | null>(null);
+const $status = createStore<string>("loading");
 // Local YYYY-MM-DD. Previously used new Date().toISOString().slice(0,10) which
 // returns the UTC date — anywhere west of UTC, that's off by one in the evening
 // (and worldtimeapi added a second UTC conversion on top of that, compounding
@@ -313,10 +313,9 @@ const URLS=["https://raw.githubusercontent.com/openfootball/worldcup.json/master
 // has no default timeout — github raw occasionally hangs, leaving the app
 // permanently on the "loading" state with no way to recover until the user
 // manually retries. AbortSignal.timeout (modern browsers) gives us a hard cap.
-async function fetchJsonAny(urls, timeoutMs){
-  timeoutMs = timeoutMs || 8000;
-  const tryOne = (url) => {
-    const init = { cache: 'no-cache' };
+async function fetchJsonAny(urls: string[], timeoutMs = 8000) {
+  const tryOne = (url: string) => {
+    const init: RequestInit = { cache: 'no-cache' };
     // AbortSignal.timeout is supported in Chrome 103+/Safari 16+/Firefox 100+
     try { init.signal = AbortSignal.timeout(timeoutMs); } catch(e) {}
     return fetch(url, init).then(r => {
@@ -399,11 +398,11 @@ async function loadSquads(){
 loadSquads();
 
 // ─── ESPN LIVE SCORES ─────────────────────────────────────────────────────────
-const $espn = createStore({});
-const $espnStatus = createStore("idle");
+const $espn = createStore<Record<string, EspnEntry>>({});
+const $espnStatus = createStore<string>("idle");
 // Per-match detail (subs, cards) fetched lazily from ESPN summary endpoint
 // Shape: { [eventId]: { loading, loaded, error, fetchedAt, subs:[], cards:[] } }
-const $espnDetails = createStore({});
+const $espnDetails = createStore<Record<string, EspnDetail>>({});
 
 // Persistent caches are declared higher up so loadData()/loadSquads() can see
 // them at script-init time (they reference them synchronously before the first
@@ -426,12 +425,12 @@ function espnNorm(n){ return ESPN_NORM[n]||n; }
 async function loadESPN(){
   try{
     const url="https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=200&dates=20260611-20260719";
-    const init={cache:"no-cache"};
+    const init: RequestInit={cache:"no-cache"};
     try { init.signal = AbortSignal.timeout(8000); } catch(e){}
     const r=await fetch(url,init);
     if(!r.ok)throw new Error("HTTP "+r.status);
     const j=await r.json();
-    const map={};
+    const map: Record<string, EspnEntry>={};
     let hasLive=false;
     (j.events||[]).forEach(ev=>{
       const comp=ev.competitions&&ev.competitions[0];
@@ -688,7 +687,7 @@ async function loadEspnSummary(eventId, force=false){
   $espnDetails.set({...$espnDetails.get(), [eventId]: {...(existing||{subs:[],cards:[],goals:[]}), loading:true}});
   try{
     const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${eventId}`;
-    const init = {cache:'no-cache'};
+    const init: RequestInit = {cache:'no-cache'};
     try { init.signal = AbortSignal.timeout(8000); } catch(e){}
     const r = await fetch(url,init);
     if(!r.ok) throw new Error('HTTP '+r.status);
@@ -762,10 +761,10 @@ function _disciplineBlock(stage){
 // Pass the upcoming match's stage so we know which discipline block to evaluate
 // against; "on a yellow" is only relevant within the same block.
 // Returns { suspended: [{name, reason}], onYellow: [{name}] }.
-function computeSuspensions(team, upcomingDate, upcomingStage){
+function computeSuspensions(team: string, upcomingDate: string, upcomingStage: string) {
   const upcomingBlock = _disciplineBlock(upcomingStage || 'group');
   const priorMatches = getTeamPriorMatches(team, upcomingDate);
-  const players = {};
+  const players: Record<string, { origName: string; yellows: number; suspendedNext: boolean; reason: string | null }> = {};
   let currentBlock = null;
   priorMatches.forEach(entry => {
     const matchBlock = _disciplineBlock(entry.stage);
@@ -838,8 +837,8 @@ async function prefetchSuspensionData(homeTeam, awayTeam, upcomingDate){
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function parseScore(s){if(!s)return null;const p=s.split("-");if(p.length!==2)return null;const h=parseInt(p[0]),a=parseInt(p[1]);return isNaN(h)||isNaN(a)?null:{h,a};}
 function getLC(sq){const c={};LEAGUES.forEach(l=>(c[l]=0));sq.forEach(p=>{c[p.league]=(c[p.league]||0)+1;});return c;}
-function calcStandings(gk,byKey){
-  const teams=GROUPS[gk],rows={};teams.forEach(t=>{rows[t]={team:t,mp:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};});
+function calcStandings(gk: string, byKey: Record<string, Match>): Standing[] {
+  const teams=GROUPS[gk],rows: Record<string, Standing>={};teams.forEach(t=>{rows[t]={team:t,mp:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};});
   for(let i=0;i<teams.length;i++)for(let j=i+1;j<teams.length;j++){const e=byKey&&byKey[pkey(teams[i],teams[j])];if(!e||!e.score)continue;const sc=parseScore(e.score);if(!sc)continue;const{h,a}=sc;const hr=rows[e.home],ar=rows[e.away];if(!hr||!ar)continue;hr.mp++;ar.mp++;hr.gf+=h;hr.ga+=a;ar.gf+=a;ar.ga+=h;if(h>a){hr.w++;hr.pts+=3;ar.l++;}else if(h<a){ar.w++;ar.pts+=3;hr.l++;}else{hr.d++;hr.pts++;ar.d++;ar.pts++;}}
   return Object.values(rows).sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf||a.team.localeCompare(b.team));
 }
@@ -1027,7 +1026,7 @@ function matchCard(entry, todayISO, showSquads=true) {
     const subs = det.subs || [];
     const cards = det.cards || [];
     const espnGoals = det.goals || [];
-    const lineups = det.lineups || {};
+    const lineups = det.lineups || { home: null, away: null };
     const hasLineups = !!(lineups.home && lineups.home.starters && lineups.home.starters.length)
                     || !!(lineups.away && lineups.away.starters && lineups.away.starters.length);
     // Only show ESPN goals when openfootball hasn't provided them yet (live games).
@@ -1951,7 +1950,9 @@ const R32_STRUCTURE = [
 //    Survives reloads. When new scores invalidate the fingerprint, the cached
 //    sim is shown stale (clearly labeled) until the user clicks Re-run.
 
-const $sim = createStore({ status:'idle', data:null, trials:0, completed:0, elapsedMs:0, key:'', cachedKey:'' });
+const $sim = createStore<{ status:string; data:unknown; trials:number; completed:number; elapsedMs:number; key:string; cachedKey:string; savedAt?:number }>(
+  { status:'idle', data:null, trials:0, completed:0, elapsedMs:0, key:'', cachedKey:'' }
+);
 const SIM_TRIALS_DEFAULT = 5000;
 const SIM_CHUNK = 250;
 const SIM_LS_KEY = 'wc2026:sim:v6'; // v6: assignThirds uses canonical FIFA Annex C lookup
@@ -1970,7 +1971,7 @@ function saveCachedSim(payload) {
   try { localStorage.setItem(SIM_LS_KEY, JSON.stringify(payload)); } catch (e) {}
 }
 
-function dataFingerprint(byKey) {
+function dataFingerprint(byKey: Record<string, Match>) {
   return Object.values(byKey||{}).filter(e=>e.stage==='group'&&e.score)
     .map(e=>e.home+'|'+e.away+'='+e.score).sort().join(',');
 }
@@ -1987,7 +1988,7 @@ function dataFingerprint(byKey) {
 
 function cancelSimulation() { _simCancelled = true; }
 
-async function startSimulation(byKey, trials) {
+async function startSimulation(byKey: Record<string, Match>, trials: number) {
   trials = trials || SIM_TRIALS_DEFAULT;
   const key = dataFingerprint(byKey);
   _simCancelled = false;
@@ -1995,7 +1996,7 @@ async function startSimulation(byKey, trials) {
 
   const t0 = performance.now();
   const GRPS = 'ABCDEFGHIJKL'.split('');
-  const counts = {};
+  const counts: Record<string, { home: Record<string, number>; away: Record<string, number> }> = {};
   R32_STRUCTURE.forEach(s => { counts[s.num] = { home:{}, away:{} }; });
 
   const allGroupPairs = [];
@@ -2056,7 +2057,7 @@ async function startSimulation(byKey, trials) {
     }
   }
 
-  const out = {};
+  const out: Record<string, { home: { team: string; pct: number }[]; away: { team: string; pct: number }[] }> = {};
   Object.entries(counts).forEach(([num, sides]) => {
     out[num] = {
       home: Object.entries(sides.home).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([team,c]) => ({team, pct:c/trials})),
@@ -2241,7 +2242,7 @@ function projectBracket(byKey, mode) {
 // way to fall below) or can't catch up to P's points with all remaining games.
 // Returns a map { teamName → { group, position } } for all locked teams.
 const _mathLockCache = { byKeyFingerprint: '', locks: {} };
-function getMathLocks(byKey) {
+function getMathLocks(byKey: Record<string, Match>) {
   // Cheap memo by played-games fingerprint so we don't recompute on every slot
   const fp = dataFingerprint(byKey);
   if (_mathLockCache.byKeyFingerprint === fp) return _mathLockCache.locks;
@@ -3189,7 +3190,7 @@ function buildScheduleView() {
     // scrolls away naturally.
     // If opts.date is passed (UPCOMING/COMPLETED day groups), the header becomes
     // clickable to toggle collapse state, persisted in $collapsedDays.
-    function daySection(label, entries, opts={}) {
+    function daySection(label: string, entries: Match[], opts: { date?: string; isToday?: boolean; id?: string } = {}) {
       const stage = SL[entries[0].stage];
       const collapsible = !!opts.date && !opts.isToday;
       const isCollapsed = collapsible && !!$collapsedDays.get()[opts.date];
