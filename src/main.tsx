@@ -6,13 +6,12 @@ const BUILD_DATE = '2026-06-26';
 
 import { loadData, loadSquads } from './data';
 import { loadESPN } from './espn';
-import { buildGroupsView } from './ui/groups';
-import { buildBracketView } from './ui/bracket';
-import { buildTeamsView } from './ui/teams';
 import { ScheduleView } from './ui/ScheduleView';
+import { GroupsView } from './ui/GroupsView';
+import { TeamsView } from './ui/TeamsView';
+import { BracketView } from './ui/BracketView';
 import { $data, $espn, $tab, $today } from './state';
 import { useStore } from './hooks/useStore';
-import { LegacyView } from './ui/LegacyView';
 
 // Side effects
 loadData();
@@ -137,14 +136,7 @@ function TabBar({ activeTab, onTabChange }: TabBarProps) {
   );
 }
 
-interface ContentAreaProps {
-  tab: string;
-  data: any;
-  espn: Record<string, any>;
-  sim: any;
-}
-
-function ContentArea({ tab, data, espn, sim }: ContentAreaProps) {
+function ContentArea({ tab }: { tab: string }) {
   const INNER_MAX: Record<string, string> = {
     bracket: '100%',
     schedule: '768px',
@@ -153,24 +145,17 @@ function ContentArea({ tab, data, espn, sim }: ContentAreaProps) {
   };
 
   return (
-    <div
-      style={{
-        maxWidth: INNER_MAX[tab] || '768px',
-        margin: '0 auto',
-      }}
-    >
+    <div style={{ maxWidth: INNER_MAX[tab] || '768px', margin: '0 auto' }}>
       {tab === 'schedule' && <ScheduleView />}
-      {tab === 'groups' && <LegacyView build={buildGroupsView} deps={[data, espn]} />}
-      {tab === 'bracket' && <LegacyView build={buildBracketView} deps={[data, espn, sim]} />}
-      {tab === 'teams' && <LegacyView build={buildTeamsView} deps={[data, espn]} />}
+      {tab === 'groups' && <GroupsView />}
+      {tab === 'bracket' && <BracketView />}
+      {tab === 'teams' && <TeamsView />}
     </div>
   );
 }
 
 function App() {
   const tab = useStore($tab);
-  const data = useStore($data);
-  const espn = useStore($espn);
 
   const handleTabChange = (newTab: string) => {
     $tab.set(newTab);
@@ -225,7 +210,7 @@ function App() {
       </div>
 
       <div style={{ flex: 1, maxWidth: '1400px', margin: '0 auto', padding: '16px', width: '100%' }}>
-        <ContentArea tab={tab} data={data} espn={espn} sim={null} />
+        <ContentArea tab={tab} />
       </div>
 
       <div

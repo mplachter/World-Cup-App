@@ -10,6 +10,7 @@ import { squadPanel } from './squad';
 import { useStore } from '../hooks/useStore';
 
 // Mounts an HTMLElement returned by a legacy factory into the Preact tree.
+// TODO: remove once HTMLEl is imported from ./HTMLEl
 function HTMLEl({ factory }: { factory: () => HTMLElement | null }) {
   const ref = useRef<HTMLDivElement>(null);
   preactUseEffect(() => {
