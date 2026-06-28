@@ -1,23 +1,43 @@
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState } from 'preact/hooks';
 import type { Match } from '../types';
 import { pkey, timeToMin } from '../constants';
 import { $data, $today, $espn, $showCompleted, $collapsedDays, $status, $espnStatus, $squads } from '../state';
+import { loadData, loadSquads } from '../data';
+import { loadESPN } from '../espn';
 import { useStore } from '../hooks/useStore';
 import { MatchCard } from './matchCard';
-import { buildFeedStatus } from './schedule';
 
 function FeedStatusPanel() {
-  const ref = useRef<HTMLDivElement>(null);
-  // Re-run whenever status stores change so the refresh button stays wired
-  const status = useStore($status);
-  const espnStatus = useStore($espnStatus);
-  const squads = useStore($squads);
-  useEffect(() => {
-    if (!ref.current) return;
-    ref.current.innerHTML = '';
-    ref.current.appendChild(buildFeedStatus());
-  }, [status, espnStatus, squads]);
-  return <div ref={ref} />;
+  const st = useStore($status);
+  const espnSt = useStore($espnStatus);
+  const sq = useStore($squads);
+  const isESPNLive = espnSt === 'live';
+  const dotColor = st === 'done' ? '#4ade80' : st === 'error' ? '#f87171' : '#60a5fa';
+  const textColor = st === 'done' ? '#4ade80' : st === 'error' ? '#f87171' : '#93c5fd';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '8px', marginBottom: '16px', fontSize: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} className={st === 'loading' ? 'spin' : ''} />
+      <span style={{ color: textColor }}>
+        {st === 'loading' ? 'Loading fixtures…' : st === 'done' ? 'openfootball · live' : 'Fixture source unavailable'}
+      </span>
+      {sq.loaded
+        ? <span style={{ color: '#6b7280', fontSize: '11px' }}>· {sq.count} squads</span>
+        : sq.error
+          ? <span style={{ color: '#f87171', fontSize: '11px' }}>· squad data unavailable</span>
+          : <span style={{ color: '#60a5fa', fontSize: '11px' }}>· loading squads…</span>
+      }
+      {isESPNLive && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '4px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', color: '#f87171', marginLeft: '6px' }}>
+          <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#f87171', animation: 'pulse 1s ease-in-out infinite' }} />
+          ESPN LIVE
+        </span>
+      )}
+      <button
+        style={{ marginLeft: 'auto', padding: '3px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit' }}
+        onClick={() => { loadData(); loadESPN(); loadSquads(); }}
+      >↻</button>
+    </div>
+  );
 }
 
 const SL: Record<string, string> = {
