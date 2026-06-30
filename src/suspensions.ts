@@ -3,7 +3,7 @@ import { $data, $espn, $espnDetails } from './state';
 import { loadEspnSummary } from './espn';
 
 // Return prior played matches for a team in chronological order.
-function getTeamPriorMatches(team: string, beforeDate: string) {
+export function getTeamPriorMatches(team: string, beforeDate: string) {
   const all = ($data.get() || { all: [] as unknown[] }).all as { home: string; away: string; date: string; time: string; score: string | null; stage: string }[];
   return all.filter(e => {
     if (e.home !== team && e.away !== team) return false;
