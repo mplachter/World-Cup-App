@@ -26,10 +26,10 @@ loadESPN();
 setInterval(loadESPN, 60000);
 
 const TABS = [
-  { id: 'schedule', path: '/',        l: '📅 Schedule' },
-  { id: 'groups',   path: '/groups',  l: '🔡 Groups' },
-  { id: 'bracket',  path: '/bracket', l: '🏆 Bracket' },
-  { id: 'teams',    path: '/teams',   l: '⚽ Teams' },
+  { id: 'schedule', path: '/', l: '📅 Schedule' },
+  { id: 'groups', path: '/groups', l: '🔡 Groups' },
+  { id: 'bracket', path: '/bracket', l: '🏆 Bracket' },
+  { id: 'teams', path: '/teams', l: '⚽ Teams' },
 ];
 
 function TodayButton() {
@@ -37,8 +37,8 @@ function TodayButton() {
   const espn = useStore($espn);
   const today = useStore($today);
 
-  const todayN = (data ? data.all : []).filter(e => e.date === today).length;
-  const liveN = Object.values(espn || {}).filter(e => e && e.isLive).length;
+  const todayN = (data ? data.all : []).filter((e) => e.date === today).length;
+  const liveN = Object.values(espn || {}).filter((e) => e && e.isLive).length;
 
   const isLive = liveN > 0;
   const hasToday = todayN > 0;
@@ -95,9 +95,7 @@ function TodayButton() {
         {isLive ? `${liveN} LIVE` : `★ ${todayN} Today`}
       </span>
       {isLive && todayN > liveN && (
-        <span style={{ color: '#9ca3af', fontWeight: 400 }}>
-          · {todayN} today
-        </span>
+        <span style={{ color: '#9ca3af', fontWeight: 400 }}>· {todayN} today</span>
       )}
     </button>
   );
@@ -116,7 +114,7 @@ function TabBar() {
 
   return (
     <div style={{ display: 'flex', gap: '2px', overflowX: 'auto' }}>
-      {TABS.map(t => {
+      {TABS.map((t) => {
         const active = isActive(t.path, t.id);
         return (
           <button
@@ -205,16 +203,18 @@ function App() {
         </div>
       </div>
 
-      <div style={{ flex: 1, maxWidth: '1400px', margin: '0 auto', padding: '16px', width: '100%' }}>
+      <div
+        style={{ flex: 1, maxWidth: '1400px', margin: '0 auto', padding: '16px', width: '100%' }}
+      >
         <div style={{ maxWidth: innerMax, margin: '0 auto' }}>
-        <Router history={hashHistory}>
-          <Route path="/" component={ScheduleView} />
-          <Route path="/groups" component={GroupsView} />
-          <Route path="/bracket" component={BracketView} />
-          <Route path="/teams" component={TeamsView} />
-          <Route path="/teams/:team" component={TeamDetailPage} />
-          <Route default component={ScheduleView} />
-        </Router>
+          <Router history={hashHistory}>
+            <Route path="/" component={ScheduleView} />
+            <Route path="/groups" component={GroupsView} />
+            <Route path="/bracket" component={BracketView} />
+            <Route path="/teams" component={TeamsView} />
+            <Route path="/teams/:team" component={TeamDetailPage} />
+            <Route default component={ScheduleView} />
+          </Router>
         </div>
       </div>
 

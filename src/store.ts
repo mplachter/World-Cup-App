@@ -9,8 +9,14 @@ export function createStore<T>(init: T): Store<T> {
   _subs.set(id, new Set());
   return {
     get: () => state,
-    set: (next) => { state = typeof next === 'function' ? (next as (prev: T) => T)(state) : next; _subs.get(id)!.forEach(fn => fn(state)); },
-    sub: (fn) => { _subs.get(id)!.add(fn as (s: unknown) => void); return () => _subs.get(id)!.delete(fn as (s: unknown) => void); },
+    set: (next) => {
+      state = typeof next === 'function' ? (next as (prev: T) => T)(state) : next;
+      _subs.get(id)!.forEach((fn) => fn(state));
+    },
+    sub: (fn) => {
+      _subs.get(id)!.add(fn as (s: unknown) => void);
+      return () => _subs.get(id)!.delete(fn as (s: unknown) => void);
+    },
   };
 }
 
@@ -19,7 +25,11 @@ export function createStore<T>(init: T): Store<T> {
 // stale/invalid persisted values (e.g. an old tab id that was renamed) and
 // falls back to the default. Storage failures (private mode, quota) silently
 // degrade to in-memory only.
-export function persistedStore<T>(key: string, defaultValue: T, validate?: (v: unknown) => boolean): Store<T> {
+export function persistedStore<T>(
+  key: string,
+  defaultValue: T,
+  validate?: (v: unknown) => boolean,
+): Store<T> {
   let initial = defaultValue;
   try {
     const raw = localStorage.getItem(key);
@@ -30,7 +40,9 @@ export function persistedStore<T>(key: string, defaultValue: T, validate?: (v: u
   } catch {}
   const store = createStore(initial);
   store.sub((v) => {
-    try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
+    try {
+      localStorage.setItem(key, JSON.stringify(v));
+    } catch {}
   });
   return store;
 }
@@ -44,7 +56,9 @@ export function persistedCache<T = unknown>(prefix: string, opts?: CacheOpts): C
   const ttl = opts.ttl || Infinity; // milliseconds
   const maxEntries = opts.maxEntries || 200;
   const fullPrefix = prefix + ':';
-  function keyFor(id: string) { return fullPrefix + id; }
+  function keyFor(id: string) {
+    return fullPrefix + id;
+  }
   function listKeys() {
     const out: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -55,21 +69,29 @@ export function persistedCache<T = unknown>(prefix: string, opts?: CacheOpts): C
   }
   function evictOldest(n: number) {
     const items: { k: string; ts: number }[] = [];
-    listKeys().forEach(k => {
+    listKeys().forEach((k) => {
       try {
         const obj = JSON.parse(localStorage.getItem(k)!);
         items.push({ k, ts: (obj && obj.ts) || 0 });
-      } catch { localStorage.removeItem(k); }
+      } catch {
+        localStorage.removeItem(k);
+      }
     });
     items.sort((a, b) => a.ts - b.ts);
-    items.slice(0, n).forEach(it => { try { localStorage.removeItem(it.k); } catch {} });
+    items.slice(0, n).forEach((it) => {
+      try {
+        localStorage.removeItem(it.k);
+      } catch {}
+    });
   }
   function gc() {
-    listKeys().forEach(k => {
+    listKeys().forEach((k) => {
       try {
         const obj = JSON.parse(localStorage.getItem(k)!);
         if (obj && obj.exp && Date.now() > obj.exp) localStorage.removeItem(k);
-      } catch { localStorage.removeItem(k); }
+      } catch {
+        localStorage.removeItem(k);
+      }
     });
   }
   gc();
@@ -84,24 +106,41 @@ export function persistedCache<T = unknown>(prefix: string, opts?: CacheOpts): C
           return null;
         }
         return obj.v;
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     },
     set(id: string, value: T, overrideTtl?: number): void {
-      const t = (overrideTtl === undefined) ? ttl : overrideTtl;
+      const t = overrideTtl === undefined ? ttl : overrideTtl;
       const obj = { v: value, ts: Date.now(), exp: t === Infinity ? 0 : Date.now() + t };
       const json = JSON.stringify(obj);
-      try { localStorage.setItem(keyFor(id), json); }
-      catch (e) {
+      try {
+        localStorage.setItem(keyFor(id), json);
+      } catch (e) {
         if (e instanceof Error && e.name === 'QuotaExceededError') {
           console.warn('[cache]', prefix, 'quota hit, evicting');
           evictOldest(Math.ceil(maxEntries * 0.2));
-          try { localStorage.setItem(keyFor(id), json); }
-          catch (e2) { console.warn('[cache]', prefix, 'persist failed after eviction:', (e2 as Error).message); }
+          try {
+            localStorage.setItem(keyFor(id), json);
+          } catch (e2) {
+            console.warn(
+              '[cache]',
+              prefix,
+              'persist failed after eviction:',
+              (e2 as Error).message,
+            );
+          }
         }
       }
     },
-    del(id: string) { try { localStorage.removeItem(keyFor(id)); } catch {} },
+    del(id: string) {
+      try {
+        localStorage.removeItem(keyFor(id));
+      } catch {}
+    },
     listKeys,
-    size() { return listKeys().length; }
+    size() {
+      return listKeys().length;
+    },
   };
 }

@@ -1,7 +1,16 @@
 import { useState } from 'preact/hooks';
 import type { Match } from '../types';
 import { pkey, timeToMin } from '../constants';
-import { $data, $today, $espn, $showCompleted, $collapsedDays, $status, $espnStatus, $squads } from '../state';
+import {
+  $data,
+  $today,
+  $espn,
+  $showCompleted,
+  $collapsedDays,
+  $status,
+  $espnStatus,
+  $squads,
+} from '../state';
 import { loadData, loadSquads } from '../data';
 import { loadESPN } from '../espn';
 import { useStore } from '../hooks/useStore';
@@ -16,27 +25,91 @@ function FeedStatusPanel() {
   const dotColor = st === 'done' ? '#4ade80' : st === 'error' ? '#f87171' : '#60a5fa';
   const textColor = st === 'done' ? '#4ade80' : st === 'error' ? '#f87171' : '#93c5fd';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '8px', marginBottom: '16px', fontSize: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
-      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} className={st === 'loading' ? 'spin' : ''} />
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '8px 12px',
+        borderRadius: '8px',
+        marginBottom: '16px',
+        fontSize: '12px',
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(255,255,255,0.07)',
+      }}
+    >
+      <div
+        style={{
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          background: dotColor,
+          flexShrink: 0,
+        }}
+        className={st === 'loading' ? 'spin' : ''}
+      />
       <span style={{ color: textColor }}>
-        {st === 'loading' ? 'Loading fixtures…' : st === 'done' ? 'openfootball · live' : 'Fixture source unavailable'}
+        {st === 'loading'
+          ? 'Loading fixtures…'
+          : st === 'done'
+            ? 'openfootball · live'
+            : 'Fixture source unavailable'}
       </span>
-      {sq.loaded
-        ? <span style={{ color: '#6b7280', fontSize: '11px' }}>· {sq.count} squads</span>
-        : sq.error
-          ? <span style={{ color: '#f87171', fontSize: '11px' }}>· squad data unavailable</span>
-          : <span style={{ color: '#60a5fa', fontSize: '11px' }}>· loading squads…</span>
-      }
+      {sq.loaded ? (
+        <span style={{ color: '#6b7280', fontSize: '11px' }}>· {sq.count} squads</span>
+      ) : sq.error ? (
+        <span style={{ color: '#f87171', fontSize: '11px' }}>· squad data unavailable</span>
+      ) : (
+        <span style={{ color: '#60a5fa', fontSize: '11px' }}>· loading squads…</span>
+      )}
       {isESPNLive && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '4px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', color: '#f87171', marginLeft: '6px' }}>
-          <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#f87171', animation: 'pulse 1s ease-in-out infinite' }} />
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            background: 'rgba(239,68,68,0.15)',
+            border: '1px solid rgba(239,68,68,0.4)',
+            borderRadius: '4px',
+            padding: '1px 6px',
+            fontSize: '10px',
+            fontWeight: '700',
+            color: '#f87171',
+            marginLeft: '6px',
+          }}
+        >
+          <div
+            style={{
+              width: '5px',
+              height: '5px',
+              borderRadius: '50%',
+              background: '#f87171',
+              animation: 'pulse 1s ease-in-out infinite',
+            }}
+          />
           ESPN LIVE
         </span>
       )}
       <button
-        style={{ marginLeft: 'auto', padding: '3px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit' }}
-        onClick={() => { loadData(); loadESPN(); loadSquads(); }}
-      >↻</button>
+        style={{
+          marginLeft: 'auto',
+          padding: '3px 8px',
+          borderRadius: '4px',
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          color: '#9ca3af',
+          fontSize: '12px',
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+        }}
+        onClick={() => {
+          loadData();
+          loadESPN();
+          loadSquads();
+        }}
+      >
+        ↻
+      </button>
     </div>
   );
 }
@@ -160,14 +233,12 @@ function DaySection({
           </span>
         )}
         {stage && (
-          <span style={{ fontSize: '10px', color: '#4b5563', flexShrink: 0 }}>
-            {stage}
-          </span>
+          <span style={{ fontSize: '10px', color: '#4b5563', flexShrink: 0 }}>{stage}</span>
         )}
       </div>
       {!isCollapsed && (
         <div>
-          {entries.map(e => (
+          {entries.map((e) => (
             <MatchCard key={pkey(e.home, e.away)} entry={e} todayISO={todayISO} showSquads />
           ))}
         </div>
@@ -190,7 +261,7 @@ export function ScheduleView() {
 
   // Filter matches
   const lower = teamFilter.toLowerCase();
-  const filtered = all.filter(e => {
+  const filtered = all.filter((e) => {
     if (stageFilter !== 'all' && e.stage !== stageFilter) return false;
     if (lower && !e.home.toLowerCase().includes(lower) && !e.away.toLowerCase().includes(lower))
       return false;
@@ -201,7 +272,7 @@ export function ScheduleView() {
   const today: Match[] = [],
     upcoming: Match[] = [],
     completed: Match[] = [];
-  filtered.forEach(e => {
+  filtered.forEach((e) => {
     if (e.date === todayISO) today.push(e);
     else if (e.date > todayISO) upcoming.push(e);
     else completed.push(e);
@@ -218,12 +289,12 @@ export function ScheduleView() {
 
   // Sort upcoming matches
   upcoming.sort((a, b) =>
-    a.date !== b.date ? a.date.localeCompare(b.date) : timeToMin(a.time) - timeToMin(b.time)
+    a.date !== b.date ? a.date.localeCompare(b.date) : timeToMin(a.time) - timeToMin(b.time),
   );
 
   // Sort completed matches
   completed.sort((a, b) =>
-    a.date !== b.date ? b.date.localeCompare(a.date) : timeToMin(b.time) - timeToMin(a.time)
+    a.date !== b.date ? b.date.localeCompare(a.date) : timeToMin(b.time) - timeToMin(a.time),
   );
 
   const handleCollapsedToggle = (date: string) => {
@@ -260,7 +331,7 @@ export function ScheduleView() {
 
       {/* Stage Filter Buttons */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
-        {STAGE_OPTIONS.map(s => (
+        {STAGE_OPTIONS.map((s) => (
           <FilterButton
             key={s.id}
             active={stageFilter === s.id}
@@ -288,12 +359,12 @@ export function ScheduleView() {
         {/* Upcoming Matches */}
         {(() => {
           const upcomingByDate: Record<string, Match[]> = {};
-          upcoming.forEach(e => {
+          upcoming.forEach((e) => {
             (upcomingByDate[e.date] = upcomingByDate[e.date] || []).push(e);
           });
           return Object.keys(upcomingByDate)
             .sort()
-            .map(date => (
+            .map((date) => (
               <DaySection
                 key={date}
                 label={formatDate(date)}
@@ -311,11 +382,11 @@ export function ScheduleView() {
           <div>
             {(() => {
               const completedByDate: Record<string, Match[]> = {};
-              completed.forEach(e => {
+              completed.forEach((e) => {
                 (completedByDate[e.date] = completedByDate[e.date] || []).push(e);
               });
               const completedDates = Object.keys(completedByDate).sort((a, b) =>
-                b.localeCompare(a)
+                b.localeCompare(a),
               );
 
               return (
@@ -352,7 +423,7 @@ export function ScheduleView() {
 
                   {showCompleted && (
                     <div>
-                      {completedDates.map(date => (
+                      {completedDates.map((date) => (
                         <DaySection
                           key={date}
                           label={formatDate(date)}

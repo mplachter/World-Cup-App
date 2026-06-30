@@ -9,6 +9,7 @@ A live tracker for the 2026 FIFA World Cup — real-time scores, projected brack
 ## What it does
 
 ### 📅 Schedule
+
 - **TODAY** section pinned to the top with LIVE games highlighted in red
 - Live indicator badge in the header (`🔴 2 LIVE · 6 today`) — tap to jump to the first live game
 - Day groups for past and future matches, **collapsible with state persisted** across sessions
@@ -16,6 +17,7 @@ A live tracker for the 2026 FIFA World Cup — real-time scores, projected brack
 - Match cards expand inline to show full detail
 
 ### ⚽ Match Detail (expanded card)
+
 - **Goals** with scorer + minute (openfootball for completed games, ESPN for live)
 - **Substitutions** — player in / player out, with minute, color-coded by team
 - **Cards** — yellow 🟨, red 🟥, and second-yellow 🟨🟥
@@ -25,6 +27,7 @@ A live tracker for the 2026 FIFA World Cup — real-time scores, projected brack
 - **Squad rosters** by domestic league with player rankings overlaid
 
 ### 🏆 Bracket
+
 - **Desktop**: full SVG bracket with all 6 rounds laid out side-by-side
 - **Mobile**: round-pager (R32 · R16 · QF · SF · 3rd · Final tabs) — each round renders as a clean vertical list
 - **Forward links** on every match card: `→ M89 (R16) · winner faces 🇧🇷 Brazil / 🇦🇷 Argentina` — tappable to jump to the next-round match
@@ -32,12 +35,14 @@ A live tracker for the 2026 FIFA World Cup — real-time scores, projected brack
 - **5,000-simulation projection** re-runs on every score update — uses FIFA-rank Elo + Poisson goal sampling
 
 ### 📊 Groups
+
 - Live standings (MP / W / D / L / GF / GA / PTS)
 - Advances + best-3rd indicators
 - Per-group match list with collapsible cards
 - Tap any team to drill into their detail page
 
 ### 🏳️ Teams
+
 - All 48 nations with **squad breakdowns by domestic league** (Premier League, La Liga, Bundesliga, etc.)
 - Player rankings highlighted on club affiliations
 - Per-team bracket projection ("vs 🇸🇦 Saudi Arabia 37% · 🇨🇻 Cape Verde 36% · 🇪🇸 Spain 20%")
@@ -58,10 +63,10 @@ A live tracker for the 2026 FIFA World Cup — real-time scores, projected brack
 
 ## Data sources
 
-| Source | Used for | Endpoint |
-|---|---|---|
-| [openfootball/worldcup.json](https://github.com/openfootball/worldcup.json) | Schedule, squads, final scores | `worldcup.json` + `worldcup.squads.json` |
-| [ESPN](https://site.api.espn.com) (unofficial) | Live scores, match events, lineups | `scoreboard` (polled 60s) + `summary` (on-demand per match) |
+| Source                                                                      | Used for                           | Endpoint                                                    |
+| --------------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------- |
+| [openfootball/worldcup.json](https://github.com/openfootball/worldcup.json) | Schedule, squads, final scores     | `worldcup.json` + `worldcup.squads.json`                    |
+| [ESPN](https://site.api.espn.com) (unofficial)                              | Live scores, match events, lineups | `scoreboard` (polled 60s) + `summary` (on-demand per match) |
 
 The ESPN `summary` endpoint is fetched lazily on match-card expand and **cached forever for finalized games**, so repeat visits are mostly localStorage hits.
 
@@ -70,13 +75,17 @@ The ESPN `summary` endpoint is fetched lazily on match-card expand and **cached 
 ## Architecture notes
 
 ### Reactivity
+
 `createStore(init)` returns `{ get, set, sub }` — a tiny Redux-lite. `persistedStore(key, default, validator)` wraps it with localStorage write-through. `persistedCache(prefix, { ttl, maxEntries })` is a TTL'd keyed cache with `QuotaExceededError` recovery (evicts oldest 20% and retries on overflow).
 
 ### Bracket projection
+
 Each `$data` or `$espn` change triggers a sim run: 5,000 Monte Carlo simulations of all remaining group games using FIFA-rank Elo + Poisson goal sampling. Each sim records which R32 slot each team lands in; bars show the distribution. A post-pass strips locked teams from slots they can't possibly fill (e.g., USA confirmed for slot M81 won't appear at 1% in M88 anymore). Cached in localStorage at `wc2026:sim:v3`.
 
 ### Suspension tracking
+
 Walks each team's prior matches in chronological order, building a per-player `{ yellows, suspendedNext }` state. Applies FIFA 2026 "discipline blocks":
+
 - Block 1: group stage
 - Block 2: R32 + R16 + QF
 - Block 3: SF + Final + 3rd-place
@@ -85,16 +94,17 @@ Single yellows reset at block boundaries; pending suspensions (red, second-yello
 
 ### Caching strategy
 
-| Data | TTL | Strategy |
-|---|---|---|
-| Schedule (openfootball) | 30 min | Stale-while-revalidate |
-| Squads (openfootball) | 24 hr | Stale-while-revalidate |
-| ESPN summary (completed) | ∞ | Cache forever — finalized matches don't change |
-| ESPN summary (live) | — | Never cached |
-| ESPN scoreboard | — | Polled every 60s |
-| Monte Carlo sim | event-driven | Re-run on every score update |
+| Data                     | TTL          | Strategy                                       |
+| ------------------------ | ------------ | ---------------------------------------------- |
+| Schedule (openfootball)  | 30 min       | Stale-while-revalidate                         |
+| Squads (openfootball)    | 24 hr        | Stale-while-revalidate                         |
+| ESPN summary (completed) | ∞            | Cache forever — finalized matches don't change |
+| ESPN summary (live)      | —            | Never cached                                   |
+| ESPN scoreboard          | —            | Polled every 60s                               |
+| Monte Carlo sim          | event-driven | Re-run on every score update                   |
 
 ### Resilience
+
 All network fetches use `AbortSignal.timeout(8000)` so a hung CDN connection can't pin the app on a loading state. Schedule and squad fetches race both `raw.githubusercontent.com` and `cdn.jsdelivr.net` in parallel via `Promise.any` — whichever responds first wins.
 
 ---
@@ -110,13 +120,13 @@ npm run dev        # Vite dev server with HMR → http://localhost:5173
 
 Other commands:
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | Start dev server with hot module replacement |
-| `npm run build` | Production build → `dist/` |
-| `npm run preview` | Serve the `dist/` build locally |
-| `npm run typecheck` | TypeScript type check (`tsc --noEmit`) |
-| `npm run lint` | ESLint on `src/` |
+| Command             | What it does                                 |
+| ------------------- | -------------------------------------------- |
+| `npm run dev`       | Start dev server with hot module replacement |
+| `npm run build`     | Production build → `dist/`                   |
+| `npm run preview`   | Serve the `dist/` build locally              |
+| `npm run typecheck` | TypeScript type check (`tsc --noEmit`)       |
+| `npm run lint`      | ESLint on `src/`                             |
 
 ## CI/CD
 

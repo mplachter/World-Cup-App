@@ -3,6 +3,7 @@
 ## Module Responsibilities
 
 ### `types.ts`
+
 - **DOM types**: `Child`, `Children` (recursive union for nested elements)
 - **Store interfaces**: `Store<T>`, `Cache<T>`
 - **Domain types**: `Match`, `MatchData`, `Player`, `Standing`, `EspnEntry`, `EspnDetail`, `Lineup`, etc.
@@ -11,6 +12,7 @@
 This is the **single source of truth** for all type definitions. Import from here.
 
 ### `store.ts`
+
 Three reactive primitives, ~100 lines total:
 
 - **`createStore<T>(init: T)`** — base reactive store
@@ -33,6 +35,7 @@ Three reactive primitives, ~100 lines total:
   - Garbage-collects expired entries on init
 
 ### `dom.ts`
+
 DOM creation without JSX or a framework.
 
 - **`ce(tag, attrs?, ...children)`** — create element
@@ -55,6 +58,7 @@ DOM creation without JSX or a framework.
   - Null/false skipped (safe for conditionals)
 
 ### `constants.ts`
+
 World data and utilities:
 
 - **World data**: `FIFA`, `FLAG`, `GROUPS`, `LEAGUES`, `LC` (league colors), `COUNTRY_TO_LEAGUE`, `POS_MAP`
@@ -71,39 +75,47 @@ World data and utilities:
 - **Standings**: `calcStandings(groupKey, matches)` → sorted `Standing[]` by pts, GD, GF
 
 ### `state.ts`
+
 Central hub for all reactive state. Exports:
 
 **UI State**:
+
 - `$tab: persistedStore<string>` — current view (`'schedule'` | `'groups'` | `'bracket'` | `'teams'`)
 - `$selectedTeam: persistedStore<string | null>` — selected team (for teams view detail)
 - `$showCompleted: persistedStore<boolean>` — show/hide completed matches filter
 - `$collapsedDays: persistedStore<Record<string, boolean>>` — collapsed day state in schedule
 
 **Data Caches**:
+
 - `espnSummaryCache` — ESPN match summaries (150 max, no TTL, forever for finalized)
 - `scheduleCache` — openfootball schedule (30 min TTL)
 - `squadsCache` — openfootball squads (24h TTL)
 
 **Squad Data**:
+
 - `SQUADS: Record<string, Player[]>` — mutable export (ES module constraint)
 - `setSQUADS(v)` — setter function to update SQUADS (can't reassign exported `let` from other modules)
 - `$squads` — store tracking load state
 
 **Schedule Data**:
+
 - `$data: createStore<MatchData | null>` — match schedule
 - `$status: createStore<string>` — `'loading'` | `'loaded'` | `'error'`
 - `$today: createStore<string>` — ISO date, re-checked every 60s in case day rolls over
 
 **ESPN Live Data**:
+
 - `$espn: createStore<Record<string, EspnEntry>>` — live scoreboard (polled 60s)
 - `$espnStatus: createStore<string>` — `'idle'` | `'loading'` | `'loaded'` | `'error'`
 - `$espnDetails: createStore<Record<string, EspnDetail>>` — per-match summaries (lazy, cached)
 
 **Navigation Helpers**:
+
 - `navigateToTeam(teamName)` — set `$selectedTeam`, switch to teams view
 - `clickableTeam(el, teamName)` — add click listener to jump to team detail
 
 ### `data.ts`
+
 Fetch schedule & squads from openfootball.
 
 - **`fetchJsonAny(urls, timeoutMs?)`** — race multiple URLs in parallel
@@ -122,6 +134,7 @@ Fetch schedule & squads from openfootball.
   - Called on app startup
 
 ### `espn.ts`
+
 Fetch & parse ESPN live scores and match details.
 
 - **`loadESPN()`** — poll scoreboard every 60s
@@ -137,6 +150,7 @@ Fetch & parse ESPN live scores and match details.
   - Internal helpers: `buildAthleteMap`, `parseEspnLineups`, `parseEventText`, `athleteNameFromInvolved`
 
 ### `suspensions.ts`
+
 Compute which players are suspended for upcoming matches.
 
 - **`computeSuspensions(teamName, allMatches)`** → `Record<playerName, { yellows, reds, suspendedNext }>`
@@ -151,6 +165,7 @@ Compute which players are suspended for upcoming matches.
   - Cached responses cost nothing
 
 ### `simulation.ts`
+
 Monte Carlo bracket projection (~980 lines).
 
 - **`$sim`** — store tracking simulation state (status, data, trials, elapsed time)
@@ -178,6 +193,7 @@ Monte Carlo bracket projection (~980 lines).
   - Avoids needing to implement complex FIFA rules on the fly
 
 ### `ui/schedule.ts`
+
 Schedule view: day groups, match cards, live badge.
 
 - **`buildScheduleView(data, espn, details, squads, suspensions)`** → `HTMLElement`
@@ -188,12 +204,14 @@ Schedule view: day groups, match cards, live badge.
   - Filters by team/stage
 
 ### `ui/groups.ts`
+
 Group standings & match lists.
 
 - **`standingsTable(group, standings)`** → standings table with MP/W/D/L/GF/GA/PTS
 - **`buildGroupsView(data, espn, squads)`** → all 12 groups with standings + match lists
 
 ### `ui/teams.ts`
+
 All 48 nations, squad detail, bracket projection.
 
 - **`buildTeamsView(squads, data, sim)`** → team selector + detail view switcher
@@ -201,6 +219,7 @@ All 48 nations, squad detail, bracket projection.
 - **`buildTeamListView(data, selectedTeam, squads)`** → searchable/filterable team list
 
 ### `ui/matchCard.ts`
+
 Expanded match card (~400 lines, largest single function).
 
 - **`matchCard(match, espn, detail, suspensions, squads, onNavigateTeam)`** → detailed card
@@ -211,12 +230,14 @@ Expanded match card (~400 lines, largest single function).
   - Lazy-loads ESPN details on expand
 
 ### `ui/squad.ts`
+
 Squad roster by domestic league.
 
 - **`leagueBar(playersByLeague)`** → colored bar chart of squad composition by league
 - **`squadPanel(teamName, players, isExpanded)`** → roster table grouped by position + league breakdown
 
 ### `ui/bracket.ts`
+
 Bracket visualization (desktop SVG + mobile pager).
 
 - **`buildBracketView(sim, data, matches, onNavigateMatch)`** → responsive bracket
@@ -227,6 +248,7 @@ Bracket visualization (desktop SVG + mobile pager).
   - Tappable to jump to match detail
 
 ### `main.ts`
+
 Application bootstrap (134 lines).
 
 1. Import all data, UI, store modules

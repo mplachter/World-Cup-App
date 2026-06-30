@@ -1,13 +1,31 @@
 import { color, space, radius, fontSize, fontWeight } from '../design/tokens';
 import {
-  Stack, Row, Text, Badge, StatusDot, Panel, FilterButton, SectionLabel,
+  Stack,
+  Row,
+  Text,
+  Badge,
+  StatusDot,
+  Panel,
+  FilterButton,
+  SectionLabel,
 } from '../design/components';
 import { useState } from 'preact/hooks';
 
 function Section({ title, children }: { title: string; children: any }) {
   return (
     <div style={{ marginBottom: space.xl }}>
-      <div style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: space.md, borderBottom: `1px solid ${color.border2}`, paddingBottom: space.xs }}>
+      <div
+        style={{
+          fontSize: fontSize.sm,
+          fontWeight: fontWeight.semibold,
+          color: color.textMuted,
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+          marginBottom: space.md,
+          borderBottom: `1px solid ${color.border2}`,
+          paddingBottom: space.xs,
+        }}
+      >
         {title}
       </div>
       {children}
@@ -21,10 +39,30 @@ function Swatch({ name, value }: { name: string; value: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, marginBottom: space.xs }}>
       {showSwatch && (
-        <div style={{ width: '24px', height: '24px', borderRadius: radius.xs, background: value, border: `1px solid ${color.border2}`, flexShrink: 0 }} />
+        <div
+          style={{
+            width: '24px',
+            height: '24px',
+            borderRadius: radius.xs,
+            background: value,
+            border: `1px solid ${color.border2}`,
+            flexShrink: 0,
+          }}
+        />
       )}
-      <span style={{ fontSize: fontSize.sm, color: color.textSecondary, fontFamily: 'monospace', minWidth: '220px' }}>{name}</span>
-      <span style={{ fontSize: fontSize.xs, color: color.textMuted, fontFamily: 'monospace' }}>{value}</span>
+      <span
+        style={{
+          fontSize: fontSize.sm,
+          color: color.textSecondary,
+          fontFamily: 'monospace',
+          minWidth: '220px',
+        }}
+      >
+        {name}
+      </span>
+      <span style={{ fontSize: fontSize.xs, color: color.textMuted, fontFamily: 'monospace' }}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -34,10 +72,25 @@ export function CatalogView() {
   const filterOptions = ['All', 'Group', 'R32', 'R16', 'QF', 'SF', 'Final'];
 
   return (
-    <div style={{ background: color.bg, minHeight: '100vh', padding: space.xl, color: color.textPrimary, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <div
+      style={{
+        background: color.bg,
+        minHeight: '100vh',
+        padding: space.xl,
+        color: color.textPrimary,
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+      }}
+    >
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
         <div style={{ marginBottom: '40px' }}>
-          <h1 style={{ fontSize: fontSize['2xl'], fontWeight: fontWeight.bold, color: color.textWhite, marginBottom: space.xs }}>
+          <h1
+            style={{
+              fontSize: fontSize['2xl'],
+              fontWeight: fontWeight.bold,
+              color: color.textWhite,
+              marginBottom: space.xs,
+            }}
+          >
             Design System Catalog
           </h1>
           <p style={{ fontSize: fontSize.body, color: color.textMuted }}>
@@ -57,23 +110,90 @@ export function CatalogView() {
 
         <Section title="Colors — Semantic">
           <Row gap="sm" wrap style={{ marginBottom: space.sm }}>
-            <div style={{ padding: `${space.xs} ${space.sm}`, background: color.accentSurface, border: `1px solid ${color.accentBorder}`, borderRadius: radius.md, fontSize: fontSize.md, color: color.accentText }}>accent</div>
-            <div style={{ padding: `${space.xs} ${space.sm}`, background: color.liveSurface, border: `1px solid ${color.liveBorder}`, borderRadius: radius.md, fontSize: fontSize.md, color: color.liveText }}>live</div>
-            <div style={{ padding: `${space.xs} ${space.sm}`, background: color.todaySurface, border: `1px solid ${color.todayBorder}`, borderRadius: radius.md, fontSize: fontSize.md, color: color.todayText }}>today</div>
-            <div style={{ padding: `${space.xs} ${space.sm}`, background: color.successSurface, border: `1px solid ${color.successBorder}`, borderRadius: radius.md, fontSize: fontSize.md, color: color.successText }}>success</div>
-            <div style={{ padding: `${space.xs} ${space.sm}`, background: color.predSurface, border: `1px solid ${color.predBorder}`, borderRadius: radius.md, fontSize: fontSize.md, color: color.predText }}>pred</div>
+            <div
+              style={{
+                padding: `${space.xs} ${space.sm}`,
+                background: color.accentSurface,
+                border: `1px solid ${color.accentBorder}`,
+                borderRadius: radius.md,
+                fontSize: fontSize.md,
+                color: color.accentText,
+              }}
+            >
+              accent
+            </div>
+            <div
+              style={{
+                padding: `${space.xs} ${space.sm}`,
+                background: color.liveSurface,
+                border: `1px solid ${color.liveBorder}`,
+                borderRadius: radius.md,
+                fontSize: fontSize.md,
+                color: color.liveText,
+              }}
+            >
+              live
+            </div>
+            <div
+              style={{
+                padding: `${space.xs} ${space.sm}`,
+                background: color.todaySurface,
+                border: `1px solid ${color.todayBorder}`,
+                borderRadius: radius.md,
+                fontSize: fontSize.md,
+                color: color.todayText,
+              }}
+            >
+              today
+            </div>
+            <div
+              style={{
+                padding: `${space.xs} ${space.sm}`,
+                background: color.successSurface,
+                border: `1px solid ${color.successBorder}`,
+                borderRadius: radius.md,
+                fontSize: fontSize.md,
+                color: color.successText,
+              }}
+            >
+              success
+            </div>
+            <div
+              style={{
+                padding: `${space.xs} ${space.sm}`,
+                background: color.predSurface,
+                border: `1px solid ${color.predBorder}`,
+                borderRadius: radius.md,
+                fontSize: fontSize.md,
+                color: color.predText,
+              }}
+            >
+              pred
+            </div>
           </Row>
         </Section>
 
         {/* ── TYPOGRAPHY ────────────────────────────────────── */}
         <Section title="Typography — Text variants">
           <Stack gap="sm">
-            <Text variant="heading" as="div">heading · {fontSize.lg} bold</Text>
-            <Text variant="body" as="div">body · {fontSize.body} regular</Text>
-            <Text variant="sm" as="div">sm · {fontSize.base} secondary</Text>
-            <Text variant="xs" as="div">xs · {fontSize.sm} muted</Text>
-            <Text variant="label" as="div">label · uppercase semibold</Text>
-            <Text variant="mono" as="div">mono · {fontSize.base} monospace</Text>
+            <Text variant="heading" as="div">
+              heading · {fontSize.lg} bold
+            </Text>
+            <Text variant="body" as="div">
+              body · {fontSize.body} regular
+            </Text>
+            <Text variant="sm" as="div">
+              sm · {fontSize.base} secondary
+            </Text>
+            <Text variant="xs" as="div">
+              xs · {fontSize.sm} muted
+            </Text>
+            <Text variant="label" as="div">
+              label · uppercase semibold
+            </Text>
+            <Text variant="mono" as="div">
+              mono · {fontSize.base} monospace
+            </Text>
           </Stack>
         </Section>
 
@@ -84,9 +204,15 @@ export function CatalogView() {
             <Badge variant="today">TODAY</Badge>
             <Badge variant="played">FT</Badge>
             <Badge variant="upcoming">UPCOMING</Badge>
-            <Badge variant="locked" mono>LOCKED</Badge>
-            <Badge variant="projected" mono>PROJ</Badge>
-            <Badge variant="pred" mono>PRED</Badge>
+            <Badge variant="locked" mono>
+              LOCKED
+            </Badge>
+            <Badge variant="projected" mono>
+              PROJ
+            </Badge>
+            <Badge variant="pred" mono>
+              PRED
+            </Badge>
             <Badge variant="stage">GROUP A</Badge>
             <Badge variant="neutral">NEUTRAL</Badge>
           </Row>
@@ -97,15 +223,21 @@ export function CatalogView() {
           <Row gap="lg">
             <Row gap="xs">
               <StatusDot live size="sm" />
-              <Text variant="sm" as="span">live sm</Text>
+              <Text variant="sm" as="span">
+                live sm
+              </Text>
             </Row>
             <Row gap="xs">
               <StatusDot live size="md" />
-              <Text variant="sm" as="span">live md</Text>
+              <Text variant="sm" as="span">
+                live md
+              </Text>
             </Row>
             <Row gap="xs">
               <StatusDot live={false} size="md" />
-              <Text variant="sm" as="span">inactive</Text>
+              <Text variant="sm" as="span">
+                inactive
+              </Text>
             </Row>
           </Row>
         </Section>
@@ -113,9 +245,11 @@ export function CatalogView() {
         {/* ── PANEL ─────────────────────────────────────────── */}
         <Section title="Panel — All variants">
           <Stack gap="sm">
-            {(['base', 'accent', 'live', 'today', 'success', 'pred'] as const).map(v => (
+            {(['base', 'accent', 'live', 'today', 'success', 'pred'] as const).map((v) => (
               <Panel key={v} variant={v}>
-                <Text variant="sm" as="div">Panel variant="{v}"</Text>
+                <Text variant="sm" as="div">
+                  Panel variant="{v}"
+                </Text>
               </Panel>
             ))}
           </Stack>
@@ -124,7 +258,7 @@ export function CatalogView() {
         {/* ── FILTER BUTTON ─────────────────────────────────── */}
         <Section title="FilterButton">
           <Row gap="xs" wrap>
-            {filterOptions.map(opt => (
+            {filterOptions.map((opt) => (
               <FilterButton
                 key={opt}
                 active={activeFilter === opt}
@@ -134,7 +268,9 @@ export function CatalogView() {
               </FilterButton>
             ))}
           </Row>
-          <Text variant="xs" as="div" style={{ marginTop: space.sm }}>Active: {activeFilter}</Text>
+          <Text variant="xs" as="div" style={{ marginTop: space.sm }}>
+            Active: {activeFilter}
+          </Text>
         </Section>
 
         {/* ── SECTION LABEL ─────────────────────────────────── */}
@@ -146,18 +282,95 @@ export function CatalogView() {
 
         {/* ── LAYOUT ────────────────────────────────────────── */}
         <Section title="Stack (flex column)">
-          <Stack gap="xs" style={{ background: color.surface1, padding: space.sm, borderRadius: radius.lg, border: `1px solid ${color.border2}` }}>
-            <div style={{ background: color.accentSurface, padding: space.xs, borderRadius: radius.sm, fontSize: fontSize.sm, color: color.accentText }}>Item 1</div>
-            <div style={{ background: color.accentSurface, padding: space.xs, borderRadius: radius.sm, fontSize: fontSize.sm, color: color.accentText }}>Item 2</div>
-            <div style={{ background: color.accentSurface, padding: space.xs, borderRadius: radius.sm, fontSize: fontSize.sm, color: color.accentText }}>Item 3</div>
+          <Stack
+            gap="xs"
+            style={{
+              background: color.surface1,
+              padding: space.sm,
+              borderRadius: radius.lg,
+              border: `1px solid ${color.border2}`,
+            }}
+          >
+            <div
+              style={{
+                background: color.accentSurface,
+                padding: space.xs,
+                borderRadius: radius.sm,
+                fontSize: fontSize.sm,
+                color: color.accentText,
+              }}
+            >
+              Item 1
+            </div>
+            <div
+              style={{
+                background: color.accentSurface,
+                padding: space.xs,
+                borderRadius: radius.sm,
+                fontSize: fontSize.sm,
+                color: color.accentText,
+              }}
+            >
+              Item 2
+            </div>
+            <div
+              style={{
+                background: color.accentSurface,
+                padding: space.xs,
+                borderRadius: radius.sm,
+                fontSize: fontSize.sm,
+                color: color.accentText,
+              }}
+            >
+              Item 3
+            </div>
           </Stack>
         </Section>
 
         <Section title="Row (flex row)">
-          <Row gap="sm" justify="space-between" style={{ background: color.surface1, padding: space.sm, borderRadius: radius.lg, border: `1px solid ${color.border2}` }}>
-            <div style={{ background: color.accentSurface, padding: space.xs, borderRadius: radius.sm, fontSize: fontSize.sm, color: color.accentText }}>Left</div>
-            <div style={{ background: color.surface3, padding: space.xs, borderRadius: radius.sm, fontSize: fontSize.sm, color: color.textSecondary }}>Center</div>
-            <div style={{ background: color.liveSurface, padding: space.xs, borderRadius: radius.sm, fontSize: fontSize.sm, color: color.liveText }}>Right</div>
+          <Row
+            gap="sm"
+            justify="space-between"
+            style={{
+              background: color.surface1,
+              padding: space.sm,
+              borderRadius: radius.lg,
+              border: `1px solid ${color.border2}`,
+            }}
+          >
+            <div
+              style={{
+                background: color.accentSurface,
+                padding: space.xs,
+                borderRadius: radius.sm,
+                fontSize: fontSize.sm,
+                color: color.accentText,
+              }}
+            >
+              Left
+            </div>
+            <div
+              style={{
+                background: color.surface3,
+                padding: space.xs,
+                borderRadius: radius.sm,
+                fontSize: fontSize.sm,
+                color: color.textSecondary,
+              }}
+            >
+              Center
+            </div>
+            <div
+              style={{
+                background: color.liveSurface,
+                padding: space.xs,
+                borderRadius: radius.sm,
+                fontSize: fontSize.sm,
+                color: color.liveText,
+              }}
+            >
+              Right
+            </div>
           </Row>
         </Section>
       </div>

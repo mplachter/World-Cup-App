@@ -16,10 +16,28 @@ import {
 const GROUP = 'A';
 const [T1, T2, T3, T4] = ['Mexico', 'South Africa', 'South Korea', 'Czech Republic'];
 
-function mkMatch(home: string, away: string, score: string | null, date: string, opts: Partial<Match> = {}): Match {
+function mkMatch(
+  home: string,
+  away: string,
+  score: string | null,
+  date: string,
+  opts: Partial<Match> = {},
+): Match {
   return {
-    home, away, score, ht: null, pen: null, goals1: [], goals2: [],
-    date, time: '18:00', ground: null, stage: 'group', group: GROUP, round: null, num: null,
+    home,
+    away,
+    score,
+    ht: null,
+    pen: null,
+    goals1: [],
+    goals2: [],
+    date,
+    time: '18:00',
+    ground: null,
+    stage: 'group',
+    group: GROUP,
+    round: null,
+    num: null,
     ...opts,
   };
 }
@@ -141,7 +159,11 @@ describe('suspension penalty combiner', () => {
 
   it('caps the total penalty even with several suspended players', () => {
     const many = combineSuspensionPenalty([
-      { rank: 1 }, { rank: 2 }, { rank: 3 }, { rank: 4 }, { rank: 5 },
+      { rank: 1 },
+      { rank: 2 },
+      { rank: 3 },
+      { rank: 4 },
+      { rank: 5 },
     ]);
     expect(many).toBe(-60);
   });
