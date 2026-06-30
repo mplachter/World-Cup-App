@@ -1,8 +1,8 @@
 import { h } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Match } from '../types';
-import { FLAG, pkey, parseScore, localTime } from '../constants';
-import { $data, $today, $status, navigateToTeam } from '../state';
+import { FLAG, pkey, parseScore, localTime, BRACKET_BL, BRACKET_BR, BRACKET_NEXT, BRACKET_SIBLING } from '../constants';
+import { $data, $status, navigateToTeam } from '../state';
 import { $espn } from '../state';
 import { $sim, SIM_TRIALS_DEFAULT, startSimulation, cancelSimulation, projectBracket, getMathLocks, dataFingerprint } from '../simulation';
 import { useStore } from '../hooks/useStore';
@@ -34,13 +34,21 @@ type ProjSlot = {
 };
 
 // ─── SVG CONNECTOR ────────────────────────────────────────────────────────────
-function Connector({ count, sh, gap, flip }: { count: number; sh: number; gap: number; flip?: boolean }) {
+const CONNECTOR_DIM = 'rgba(255,255,255,0.15)';
+const CONNECTOR_LIT = '#4ade80';
+function Connector({ count, sh, gap, flip, wins }: { count: number; sh: number; gap: number; flip?: boolean; wins?: { top?: boolean; bottom?: boolean }[] }) {
   const totalH = count * sh + (count - 1) * gap;
   const paths: h.JSX.Element[] = [];
   for (let i = 0; i < count; i += 2) {
     const ty = i * (sh + gap) + sh / 2, by = (i + 1) * (sh + gap) + sh / 2, my = (ty + by) / 2;
-    [`M0,${ty} H10 V${my}`, `M0,${by} H10 V${my}`, `M10,${my} H20`].forEach((d, pi) => {
-      paths.push(<path key={i + '-' + pi} d={d} fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" />);
+    const win = wins?.[i / 2];
+    const segs: [string, string][] = [
+      [`M0,${ty} H10 V${my}`, win?.top ? CONNECTOR_LIT : CONNECTOR_DIM],
+      [`M0,${by} H10 V${my}`, win?.bottom ? CONNECTOR_LIT : CONNECTOR_DIM],
+      [`M10,${my} H20`, (win?.top || win?.bottom) ? CONNECTOR_LIT : CONNECTOR_DIM],
+    ];
+    segs.forEach(([d, stroke], pi) => {
+      paths.push(<path key={i + '-' + pi} d={d} fill="none" stroke={stroke} stroke-width="1.5" />);
     });
   }
   return (
@@ -171,7 +179,8 @@ function ProjSlotEl({ slot, byKey }: { slot: ProjSlot | null; byKey: Record<stri
 }
 
 // ─── PBSLOT (SVG bracket card) ─────────────────────────────────────────────────
-function PBSlot({ projHome, projAway, entry, small, byKey, espn }: {
+function PBSlot({ num, projHome, projAway, entry, small, byKey, espn }: {
+  num: number;
   projHome: ProjSlot | null;
   projAway: ProjSlot | null;
   entry: Match | undefined;
@@ -198,7 +207,7 @@ function PBSlot({ projHome, projAway, entry, small, byKey, espn }: {
   function makeStack(proj: ProjSlot, isHomeRow: boolean) {
     const raw = (proj.candidates || []).slice(0, 3);
     if (!raw.length) {
-      return <div style={{ padding: '6px', fontSize: '10px', color: '#6b7280', borderBottom: isHomeRow ? '1px solid rgba(255,255,255,0.07)' : 'none' }}>TBD</div>;
+      return <div data-testid="bracket-team-row" data-team="" data-confidence="unknown" style={{ padding: '6px', fontSize: '10px', color: '#6b7280', borderBottom: isHomeRow ? '1px solid rgba(255,255,255,0.07)' : 'none' }}>TBD</div>;
     }
     const top = raw[0];
     const secondPct = raw[1] ? raw[1].pct : 0;
@@ -209,7 +218,7 @@ function PBSlot({ projHome, projAway, entry, small, byKey, espn }: {
 
     if (locked) {
       return (
-        <div style={{ padding: '8px 8px', borderBottom: isHomeRow ? '1px solid rgba(255,255,255,0.07)' : 'none', display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(74,222,128,0.05)', cursor: 'pointer' }}
+        <div data-testid="bracket-team-row" data-team={top.team} data-confidence="locked" style={{ padding: '8px 8px', borderBottom: isHomeRow ? '1px solid rgba(255,255,255,0.07)' : 'none', display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(74,222,128,0.05)', cursor: 'pointer' }}
           onClick={(e) => { e.stopPropagation(); navigateToTeam(top.team); }}>
           <span style={{ fontSize: (small ? 14 : 16) + 'px', flexShrink: 0 }}>{FLAG[top.team] || '❓'}</span>
           <span style={{ fontSize: (small ? 11 : 12) + 'px', color: '#e2e8f0', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{top.team}</span>
@@ -225,7 +234,7 @@ function PBSlot({ projHome, projAway, entry, small, byKey, espn }: {
       const predicted = poolTeams[0];
       const alternates = poolTeams.slice(1);
       return (
-        <div style={{ borderBottom: isHomeRow ? '1px solid rgba(255,255,255,0.07)' : 'none', background: 'rgba(168,162,158,0.04)' }}>
+        <div data-testid="bracket-team-row" data-team={predicted.team} data-confidence="pred" style={{ borderBottom: isHomeRow ? '1px solid rgba(255,255,255,0.07)' : 'none', background: 'rgba(168,162,158,0.04)' }}>
           <div style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
             onClick={(e) => { e.stopPropagation(); navigateToTeam(predicted.team); }}>
             <span style={{ fontSize: (small ? 14 : 16) + 'px', flexShrink: 0 }}>{FLAG[predicted.team] || '❓'}</span>
@@ -250,7 +259,7 @@ function PBSlot({ projHome, projAway, entry, small, byKey, espn }: {
 
     if (projected) {
       return (
-        <div style={{ padding: '8px 8px', borderBottom: isHomeRow ? '1px solid rgba(255,255,255,0.07)' : 'none', display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(147,197,253,0.04)', cursor: 'pointer' }}
+        <div data-testid="bracket-team-row" data-team={top.team} data-confidence="projected" style={{ padding: '8px 8px', borderBottom: isHomeRow ? '1px solid rgba(255,255,255,0.07)' : 'none', display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(147,197,253,0.04)', cursor: 'pointer' }}
           onClick={(e) => { e.stopPropagation(); navigateToTeam(top.team); }}>
           <span style={{ fontSize: (small ? 14 : 16) + 'px', flexShrink: 0 }}>{FLAG[top.team] || '❓'}</span>
           <span style={{ fontSize: (small ? 11 : 12) + 'px', color: '#e2e8f0', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{top.team}</span>
@@ -266,7 +275,7 @@ function PBSlot({ projHome, projAway, entry, small, byKey, espn }: {
         {raw.map(c => {
           const pctTxt = c.pct >= 0.995 ? '>99%' : c.pct < 0.005 ? '<1%' : Math.round(c.pct * 100) + '%';
           return (
-            <div key={c.team} style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '1px 0', position: 'relative', cursor: 'pointer' }}
+            <div key={c.team} data-testid="bracket-team-row" data-team={c.team} data-confidence="candidate" style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '1px 0', position: 'relative', cursor: 'pointer' }}
               onClick={(e) => { e.stopPropagation(); navigateToTeam(c.team); }}>
               <div style={{ position: 'absolute', left: 0, top: 1, bottom: 1, width: Math.max(2, c.pct * 100) + '%', background: 'rgba(59,130,246,0.25)', borderRadius: '2px', zIndex: 0 }} />
               <span style={{ fontSize: '11px', flexShrink: 0, zIndex: 1, position: 'relative' }}>{FLAG[c.team] || '❓'}</span>
@@ -288,6 +297,10 @@ function PBSlot({ projHome, projAway, entry, small, byKey, espn }: {
     const color = proj.confidence === 'confirmed' ? null : proj.confidence === 'projected' ? '#93c5fd' : proj.confidence === 'contested' ? '#fbbf24' : '#6b7280';
     return (
       <div
+        data-testid="bracket-team-row"
+        data-team={isUnknown ? '' : proj.team}
+        data-confidence={proj.confidence || 'unknown'}
+        data-has-score={scoreVal !== null}
         style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 6px', borderBottom: isHomeRow ? '1px solid rgba(255,255,255,0.07)' : 'none', background: won ? 'rgba(59,130,246,0.15)' : 'transparent', cursor: 'pointer' }}
         onClick={(e) => { e.stopPropagation(); if (!isUnknown) navigateToTeam(proj.team!); }}
       >
@@ -304,7 +317,7 @@ function PBSlot({ projHome, projAway, entry, small, byKey, espn }: {
   }
 
   return (
-    <div style={{ width: w + 'px', minHeight: sh + 'px', borderRadius: '6px', overflow: 'hidden', border: isLive ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+    <div data-testid="bracket-slot" data-match-num={num} style={{ width: w + 'px', minHeight: sh + 'px', borderRadius: '6px', overflow: 'hidden', border: isLive ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
       {makeRow(homeProj, hW, hScore, true)}
       {makeRow(awayProj, aW, aScore, false)}
       {ds && <div style={{ padding: '2px 6px 3px', background: 'rgba(0,0,0,0.2)', fontSize: '9px', color: '#374151', marginTop: 'auto' }}>
@@ -315,7 +328,7 @@ function PBSlot({ projHome, projAway, entry, small, byKey, espn }: {
 }
 
 // ─── SIM PANEL ────────────────────────────────────────────────────────────────
-function SimPanel({ byKey }: { byKey: Record<string, Match> }) {
+function SimPanel({ byKey, byNum }: { byKey: Record<string, Match>; byNum: Record<string, Match> }) {
   const sim = useStore($sim);
   const curKey = dataFingerprint(byKey);
   const isRunning = sim.status === 'running';
@@ -362,7 +375,7 @@ function SimPanel({ byKey }: { byKey: Record<string, Match> }) {
         </div>
         {isRunning
           ? <button style={{ padding: '7px 14px', borderRadius: '6px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#f87171', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }} onClick={cancelSimulation}>Cancel</button>
-          : <button style={{ padding: '7px 14px', borderRadius: '6px', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.5)', color: '#93c5fd', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }} onClick={() => startSimulation(byKey, SIM_TRIALS_DEFAULT)}>↻ Re-run</button>
+          : <button style={{ padding: '7px 14px', borderRadius: '6px', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.5)', color: '#93c5fd', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }} onClick={() => startSimulation(byKey, byNum, SIM_TRIALS_DEFAULT)}>↻ Re-run</button>
         }
       </div>
     </div>
@@ -375,7 +388,6 @@ export function BracketView() {
   const status = useStore($status);
   const espn = useStore($espn);
   const sim = useStore($sim);
-  const todayISO = useStore($today);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   const [view, setView] = useState(isMobile ? 'r32' : 'full');
   const [scrollToMatch, setScrollToMatch] = useState<number | null>(null);
@@ -389,7 +401,7 @@ export function BracketView() {
       const s = $sim.get();
       if (s.status === 'running') return;
       if (s.key === fp && s.data) return;
-      startSimulation(data.byKey, SIM_TRIALS_DEFAULT);
+      startSimulation(data.byKey, data.byNum || {}, SIM_TRIALS_DEFAULT);
     }
     maybeAutoStartSim();
   }, [data]);
@@ -430,12 +442,13 @@ export function BracketView() {
   proj.r32.forEach(m => { r32Map[m.num] = m; });
 
   function getSlots(num: number) {
-    const pm = r32Map[num];
     const entry = byNum[num] as Match | undefined;
-    if (!pm) return { home: { team: 'TBD', confidence: 'unknown', alts: [] as any[] }, away: { team: 'TBD', confidence: 'unknown', alts: [] as any[] }, entry };
-    if (entry?.home && (entry.score || entry.date < todayISO)) {
+    // A real, resolved fixture always wins — covers R32 and any later round once
+    // openfootball publishes the matchup (even pre-kickoff or mid-live).
+    if (entry?.home && entry.away && FLAG[entry.home] && FLAG[entry.away]) {
       return { home: { team: entry.home, confidence: 'confirmed', alts: [] as any[] }, away: { team: entry.away, confidence: 'confirmed', alts: [] as any[] }, entry };
     }
+    // Monte Carlo candidates now cover every round (R32 through Final).
     if (simData && simData[num]) {
       return {
         home: { team: 'TBD', confidence: 'unknown', alts: [] as any[], candidates: simData[num].home || [] },
@@ -443,12 +456,24 @@ export function BracketView() {
         entry,
       };
     }
+    // Deterministic group-standings fallback (R32 only) for while the sim is still running.
+    const pm = r32Map[num];
+    if (pm) return { home: pm.home, away: pm.away, entry };
     return { home: { team: 'TBD', confidence: 'unknown', alts: [] as any[] }, away: { team: 'TBD', confidence: 'unknown', alts: [] as any[] }, entry };
   }
 
   function makeBslot(num: number, small = false) {
     const { home, away, entry } = getSlots(num);
-    return <PBSlot key={num} projHome={home} projAway={away} entry={entry} small={small} byKey={byKey} espn={espn} />;
+    return <PBSlot key={num} num={num} projHome={home} projAway={away} entry={entry} small={small} byKey={byKey} espn={espn} />;
+  }
+
+  // A finished real result with a decisive (non-drawn) score — used to light up
+  // the connector line tracing that winner into the next round's slot.
+  function isMatchDecided(num: number): boolean {
+    const entry = byNum[num] as Match | undefined;
+    if (!entry?.home || !entry.away || !FLAG[entry.home] || !FLAG[entry.away]) return false;
+    const sc = parseScore(entry.score);
+    return !!sc && sc.h !== sc.a;
   }
 
   function makeBhalf(nums: number[], depth: number, flip = false) {
@@ -462,7 +487,11 @@ export function BracketView() {
         {nums.map(n => makeBslot(n, small))}
       </div>
     );
-    const conn = <Connector count={nums.length} sh={sh} gap={gap} flip={flip} />;
+    const wins: { top?: boolean; bottom?: boolean }[] = [];
+    for (let i = 0; i < nums.length; i += 2) {
+      wins.push({ top: isMatchDecided(nums[i]), bottom: isMatchDecided(nums[i + 1]) });
+    }
+    const conn = <Connector count={nums.length} sh={sh} gap={gap} flip={flip} wins={wins} />;
     return (
       <div style={{ display: 'flex', alignItems: 'center' }}>
         {flip ? <>{conn}{slots}</> : <>{slots}{conn}</>}
@@ -476,20 +505,9 @@ export function BracketView() {
   ];
   const VIEWS = isMobile ? ROUND_VIEWS : [{ id: 'full', l: '🏆 Full Bracket' }, ...ROUND_VIEWS];
 
-  // Round list navigation lookup tables (only built when needed)
-  const BL_PAIRS: Record<string, number[]> = { r32: [74, 76, 73, 75, 78, 77, 81, 82], r16: [89, 90, 91, 92], qf: [97, 99] };
-  const BR_PAIRS: Record<string, number[]> = { r32: [83, 84, 85, 87, 80, 86, 88, 79], r16: [93, 94, 95, 96], qf: [98, 100] };
-  const NEXT_M: Record<number, number> = {};
-  const SIBLING_M: Record<number, number> = {};
-  function _pair(arr: number[], nextArr: number[]) {
-    for (let i = 0; i < arr.length; i += 2) {
-      const a = arr[i], b = arr[i + 1], n = nextArr[i / 2];
-      NEXT_M[a] = n; NEXT_M[b] = n; SIBLING_M[a] = b; SIBLING_M[b] = a;
-    }
-  }
-  _pair(BL_PAIRS.r32, BL_PAIRS.r16); _pair(BR_PAIRS.r32, BR_PAIRS.r16);
-  _pair(BL_PAIRS.r16, BL_PAIRS.qf); _pair(BR_PAIRS.r16, BR_PAIRS.qf);
-  _pair([97, 98, 99, 100], [101, 102]); _pair([101, 102], [104]);
+  // Round list navigation lookup tables
+  const NEXT_M = BRACKET_NEXT;
+  const SIBLING_M = BRACKET_SIBLING;
   const ROUND_OF: Record<number, string> = {};
   [73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88].forEach(n => ROUND_OF[n] = 'R16');
   [89, 90, 91, 92, 93, 94, 95, 96].forEach(n => ROUND_OF[n] = 'QF');
@@ -517,8 +535,8 @@ export function BracketView() {
     return f ? f + ' ' + name : name;
   }
 
-  const BL = { r32: [74, 76, 73, 75, 78, 77, 81, 82], r16: [89, 90, 91, 92], qf: [97, 99] };
-  const BR = { r32: [83, 84, 85, 87, 80, 86, 88, 79], r16: [93, 94, 95, 96], qf: [98, 100] };
+  const BL = BRACKET_BL;
+  const BR = BRACKET_BR;
 
   return (
     <div>
@@ -553,7 +571,7 @@ export function BracketView() {
       </div>
 
       {/* Sim status panel */}
-      <SimPanel byKey={byKey} />
+      <SimPanel byKey={byKey} byNum={byNum} />
 
       {/* Content */}
       <div ref={contentRef}>

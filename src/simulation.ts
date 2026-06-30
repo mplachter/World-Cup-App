@@ -1,5 +1,5 @@
 import type { Match } from './types';
-import { FIFA, GROUPS, pkey, calcStandings } from './constants';
+import { FIFA, GROUPS, pkey, calcStandings, parseScore, BRACKET_FEEDS, BRACKET_THIRD_PLACE_FEEDS } from './constants';
 import { createStore } from './store';
 import annexCData from './data/annex-c.json';
 
@@ -25,7 +25,7 @@ function saveCachedSim(payload: unknown) {
 }
 
 export function dataFingerprint(byKey: Record<string, Match>): string {
-  return Object.values(byKey||{}).filter(e=>e.stage==='group'&&e.score)
+  return Object.values(byKey||{}).filter(e=>e.score)
     .map(e=>e.home+'|'+e.away+'='+e.score).sort().join(',');
 }
 
@@ -113,13 +113,23 @@ function poissonSample(lambda: number): number {
   do { k++; p *= Math.random(); } while (p > L);
   return k - 1;
 }
-function simulateMatch(home: string, away: string): { h: number; a: number } {
+function eloExpectation(home: string, away: string): number {
   const eH = rankToElo(FIFA[home]);
   const eA = rankToElo(FIFA[away]);
-  const expH = 1 / (1 + Math.pow(10, (eA - eH) / 400));
+  return 1 / (1 + Math.pow(10, (eA - eH) / 400));
+}
+function simulateMatch(home: string, away: string): { h: number; a: number } {
+  const expH = eloExpectation(home, away);
   const lH = Math.max(0.25, 1.35 + 1.4 * (expH - 0.5));
   const lA = Math.max(0.25, 1.35 + 1.4 * ((1 - expH) - 0.5));
   return { h: poissonSample(lH), a: poissonSample(lA) };
+}
+// Knockout matches can't end level — fall back to a penalty-shootout coin flip
+// weighted by Elo when regulation+ET nets a draw.
+function simulateKnockoutWinner(home: string, away: string): string {
+  const r = simulateMatch(home, away);
+  if (r.h !== r.a) return r.h > r.a ? home : away;
+  return Math.random() < eloExpectation(home, away) ? home : away;
 }
 
 const R32_STRUCTURE = [
@@ -141,7 +151,7 @@ const R32_STRUCTURE = [
   { num:88, home:{kind:'runnerup',group:'D'}, away:{kind:'runnerup',group:'G'} },
 ];
 
-export async function startSimulation(byKey: Record<string, Match>, trials: number) {
+export async function startSimulation(byKey: Record<string, Match>, byNum: Record<string, Match>, trials: number) {
   trials = trials || SIM_TRIALS_DEFAULT;
   const key = dataFingerprint(byKey);
   _simCancelled = false;
@@ -150,7 +160,19 @@ export async function startSimulation(byKey: Record<string, Match>, trials: numb
   const t0 = performance.now();
   const GRPS = 'ABCDEFGHIJKL'.split('');
   const counts: Record<number, { home: Record<string, number>; away: Record<string, number> }> = {};
-  R32_STRUCTURE.forEach(s => { counts[s.num] = { home:{}, away:{} }; });
+  for (let n = 73; n <= 104; n++) counts[n] = { home: {}, away: {} };
+
+  // If a knockout match has an actual final result, use the real winner every
+  // trial instead of resimulating it — same principle as `existing` for group games.
+  function decideWinner(num: number, home: string | undefined, away: string | undefined): string | undefined {
+    if (!home || !away) return undefined;
+    const real = byNum[String(num)];
+    if (real && real.score && real.home === home && real.away === away) {
+      const sc = parseScore(real.score);
+      if (sc && sc.h !== sc.a) return sc.h > sc.a ? home : away;
+    }
+    return simulateKnockoutWinner(home, away);
+  }
 
   const allGroupPairs: { key:string; group:string; home:string; away:string; existing: Match | null }[] = [];
   GRPS.forEach(g => {
@@ -183,6 +205,9 @@ export async function startSimulation(byKey: Record<string, Match>, trials: numb
     const top8Groups = thirds.slice(0,8).map(t => t.group);
     const assignment = top8Groups.length === 8 ? assignThirds(top8Groups, true) : {};
 
+    const slotTeam: Record<number, { home?: string; away?: string }> = {};
+    const winnerOf: Record<number, string | undefined> = {};
+
     for (const s of R32_STRUCTURE) {
       const side = (sideSpec: { kind: string; group?: string; match?: number }) => {
         if (sideSpec.kind === 'winner')   return st[sideSpec.group!][0]?.team;
@@ -193,11 +218,38 @@ export async function startSimulation(byKey: Record<string, Match>, trials: numb
         }
         return null;
       };
-      const hT = side(s.home as { kind: string; group?: string; match?: number });
-      const aT = side(s.away as { kind: string; group?: string; match?: number });
+      const hT = side(s.home as { kind: string; group?: string; match?: number }) ?? undefined;
+      const aT = side(s.away as { kind: string; group?: string; match?: number }) ?? undefined;
+      slotTeam[s.num] = { home: hT, away: aT };
       if (hT) counts[s.num].home[hT] = (counts[s.num].home[hT] || 0) + 1;
       if (aT) counts[s.num].away[aT] = (counts[s.num].away[aT] || 0) + 1;
+      winnerOf[s.num] = decideWinner(s.num, hT, aT);
     }
+
+    // Propagate winners forward through R16 → QF → SF (match numbers increase
+    // monotonically with round, so feeders are always already resolved).
+    for (let num = 89; num <= 102; num++) {
+      const feed = BRACKET_FEEDS[num];
+      if (!feed) continue;
+      const hT = winnerOf[feed.home];
+      const aT = winnerOf[feed.away];
+      slotTeam[num] = { home: hT, away: aT };
+      if (hT) counts[num].home[hT] = (counts[num].home[hT] || 0) + 1;
+      if (aT) counts[num].away[aT] = (counts[num].away[aT] || 0) + 1;
+      winnerOf[num] = decideWinner(num, hT, aT);
+    }
+
+    // Final (104): semifinal winners.
+    const finalH = winnerOf[101], finalA = winnerOf[102];
+    if (finalH) counts[104].home[finalH] = (counts[104].home[finalH] || 0) + 1;
+    if (finalA) counts[104].away[finalA] = (counts[104].away[finalA] || 0) + 1;
+
+    // Third-place playoff (103): semifinal losers.
+    const sf1 = slotTeam[BRACKET_THIRD_PLACE_FEEDS.home], sf2 = slotTeam[BRACKET_THIRD_PLACE_FEEDS.away];
+    const loser1 = sf1 && winnerOf[BRACKET_THIRD_PLACE_FEEDS.home] ? (winnerOf[BRACKET_THIRD_PLACE_FEEDS.home] === sf1.home ? sf1.away : sf1.home) : undefined;
+    const loser2 = sf2 && winnerOf[BRACKET_THIRD_PLACE_FEEDS.away] ? (winnerOf[BRACKET_THIRD_PLACE_FEEDS.away] === sf2.home ? sf2.away : sf2.home) : undefined;
+    if (loser1) counts[103].home[loser1] = (counts[103].home[loser1] || 0) + 1;
+    if (loser2) counts[103].away[loser2] = (counts[103].away[loser2] || 0) + 1;
 
     if ((trial + 1) % SIM_CHUNK === 0 || trial === trials - 1) {
       const cur = $sim.get();
@@ -223,12 +275,16 @@ export async function startSimulation(byKey: Record<string, Match>, trials: numb
     if (!cands || !cands.length) return false;
     return cands[0].pct >= 0.9 || cands.slice(1).every(c => c.pct < 0.1);
   }
+  // The dedup passes below resolve ambiguity from the third-place lottery, which
+  // only affects which R32 slot a team lands in — R16+ pairings are a fixed tree
+  // with no such cross-slot ambiguity, so they're left out of this scope.
+  const r32Out = Object.entries(out).filter(([num]) => +num <= 88);
   const lockedTeams = new Set<string>();
-  Object.values(out).forEach(sides => {
+  r32Out.forEach(([, sides]) => {
     if (isDominant(sides.home)) lockedTeams.add(sides.home[0].team);
     if (isDominant(sides.away)) lockedTeams.add(sides.away[0].team);
   });
-  Object.values(out).forEach(sides => {
+  r32Out.forEach(([, sides]) => {
     (['home', 'away'] as const).forEach(side => {
       if (isDominant(sides[side])) return;
       sides[side] = sides[side].filter(c => !lockedTeams.has(c.team));
@@ -242,7 +298,7 @@ export async function startSimulation(byKey: Record<string, Match>, trials: numb
     changed = false;
     safety++;
     const bestTopSlot: Record<string, { slotKey: string; pct: number }> = {};
-    Object.entries(out).forEach(([num, sides]) => {
+    r32Out.forEach(([num, sides]) => {
       (['home','away'] as const).forEach(side => {
         const cands = sides[side];
         if (!cands || !cands.length) return;
@@ -254,7 +310,7 @@ export async function startSimulation(byKey: Record<string, Match>, trials: numb
         }
       });
     });
-    Object.entries(out).forEach(([num, sides]) => {
+    r32Out.forEach(([num, sides]) => {
       (['home','away'] as const).forEach(side => {
         const cands = sides[side];
         if (!cands || !cands.length) return;
