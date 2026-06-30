@@ -1,7 +1,7 @@
 import { h } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Match } from '../types';
-import { FLAG, pkey, parseScore, localTime, BRACKET_BL, BRACKET_BR, BRACKET_NEXT, BRACKET_SIBLING } from '../constants';
+import { FLAG, pkey, parseScore, getMatchWinner, localTime, BRACKET_BL, BRACKET_BR, BRACKET_NEXT, BRACKET_SIBLING } from '../constants';
 import { $data, $status, navigateToTeam } from '../state';
 import { $espn } from '../state';
 import { $sim, SIM_TRIALS_DEFAULT, startSimulation, cancelSimulation, projectBracket, getMathLocks, dataFingerprint } from '../simulation';
@@ -193,9 +193,11 @@ function PBSlot({ num, projHome, projAway, entry, small, byKey, espn }: {
   const mathLocks = getMathLocks(byKey);
   const espnE = entry ? espn[pkey(entry.home || '', entry.away || '')] : null;
   const rawScore = (espnE && (espnE.isLive || espnE.isPost)) ? espnE.score : entry?.score;
+  const rawPen = (espnE && (espnE.isLive || espnE.isPost) && espnE.pen) ? espnE.pen : (entry?.pen || null);
   const sc = parseScore(rawScore || null);
-  const hW = sc ? sc.h > sc.a : false;
-  const aW = sc ? sc.a > sc.h : false;
+  const winner = getMatchWinner({ home: entry?.home || '', away: entry?.away || '', score: rawScore || null, pen: rawPen }, espnE?.isPost ? espnE.winner : null);
+  const hW = !!entry?.home && winner === entry.home;
+  const aW = !!entry?.away && winner === entry.away;
   const hScore = sc !== null ? String(sc.h) : null;
   const aScore = sc !== null ? String(sc.a) : null;
   const isLive = !!(espnE && espnE.isLive);
@@ -321,7 +323,7 @@ function PBSlot({ num, projHome, projAway, entry, small, byKey, espn }: {
       {makeRow(homeProj, hW, hScore, true)}
       {makeRow(awayProj, aW, aScore, false)}
       {ds && <div style={{ padding: '2px 6px 3px', background: 'rgba(0,0,0,0.2)', fontSize: '9px', color: '#374151', marginTop: 'auto' }}>
-        {ds}{entry?.time ? ' · ' + entry.time : ''}{entry?.ground ? ' · ' + entry.ground : ''}{isLive && espnE?.clock ? ' · ' + espnE.clock : ''}
+        {ds}{entry?.time ? ' · ' + entry.time : ''}{entry?.ground ? ' · ' + entry.ground : ''}{isLive && espnE?.clock ? ' · ' + espnE.clock : ''}{rawPen ? ' · ' + rawPen + ' p' : ''}
       </div>}
     </div>
   );
@@ -467,13 +469,15 @@ export function BracketView() {
     return <PBSlot key={num} num={num} projHome={home} projAway={away} entry={entry} small={small} byKey={byKey} espn={espn} />;
   }
 
-  // A finished real result with a decisive (non-drawn) score — used to light up
+  // A finished real result (including penalty shootouts) — used to light up
   // the connector line tracing that winner into the next round's slot.
   function isMatchDecided(num: number): boolean {
     const entry = byNum[num] as Match | undefined;
     if (!entry?.home || !entry.away || !FLAG[entry.home] || !FLAG[entry.away]) return false;
-    const sc = parseScore(entry.score);
-    return !!sc && sc.h !== sc.a;
+    const espnE = espn[pkey(entry.home, entry.away)];
+    const rawScore = (espnE && (espnE.isLive || espnE.isPost)) ? espnE.score : entry.score;
+    const rawPen = (espnE && (espnE.isLive || espnE.isPost) && espnE.pen) ? espnE.pen : entry.pen;
+    return !!getMatchWinner({ home: entry.home, away: entry.away, score: rawScore || null, pen: rawPen }, espnE?.isPost ? espnE.winner : null);
   }
 
   function makeBhalf(nums: number[], depth: number, flip = false) {

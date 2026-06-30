@@ -33,6 +33,9 @@ export async function loadESPN() {
       const aName = espnNorm((away.team as Record<string, unknown>).displayName as string);
       const key = pkey(hName, aName);
       const score = home.score + "-" + away.score;
+      const hSO = home.shootoutScore as number | undefined;
+      const aSO = away.shootoutScore as number | undefined;
+      const pen = (hSO || aSO) ? `${hSO || 0}-${aSO || 0}` : null;
       const bcast = ((comp.broadcasts as unknown[]) && (comp.broadcasts as unknown[])[0] && ((comp.broadcasts as unknown[])[0] as Record<string, unknown>).names as string[]) || [];
       map[key] = {
         id: ev.id as string,
@@ -43,6 +46,7 @@ export async function loadESPN() {
         winner: isPost ? (home.winner ? hName : aName) : null,
         broadcast: bcast.join(" · "),
         htScore: null,
+        pen,
       };
     });
     Object.entries(map).forEach(([k, v]) => {

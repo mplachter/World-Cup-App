@@ -36,6 +36,7 @@ export interface Match {
   away: string;
   score: string | null;
   ht: string | null;
+  pen: string | null;
   goals1: RawGoal[];
   goals2: RawGoal[];
   date: string;
@@ -70,6 +71,7 @@ export interface EspnEntry {
   winner: string | null;
   broadcast: string;
   htScore: string | null;
+  pen: string | null;
 }
 
 // ─── ESPN PER-MATCH DETAIL ────────────────────────────────────────────────────
