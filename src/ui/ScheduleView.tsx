@@ -6,6 +6,7 @@ import { loadData, loadSquads } from '../data';
 import { loadESPN } from '../espn';
 import { useStore } from '../hooks/useStore';
 import { MatchCard } from './matchCard';
+import { FilterButton } from '../design/components';
 
 function FeedStatusPanel() {
   const st = useStore($status);
@@ -260,24 +261,13 @@ export function ScheduleView() {
       {/* Stage Filter Buttons */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
         {STAGE_OPTIONS.map(s => (
-          <button
+          <FilterButton
             key={s.id}
+            active={stageFilter === s.id}
             onClick={() => setStageFilter(s.id)}
-            style={{
-              padding: '4px 10px',
-              borderRadius: '4px',
-              fontSize: '11px',
-              background:
-                stageFilter === s.id ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${stageFilter === s.id ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.1)'}`,
-              color: stageFilter === s.id ? '#93c5fd' : '#94a3b8',
-              fontWeight: stageFilter === s.id ? '600' : '400',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
           >
             {s.l}
-          </button>
+          </FilterButton>
         ))}
       </div>
 

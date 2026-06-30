@@ -1,16 +1,21 @@
 import './styles.css';
 import { render } from 'preact';
+import Router, { Route, useRouter } from 'preact-router';
+import { useState, useEffect } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
+import { navigate, hashHistory } from './router';
 
-const APP_VERSION = 'v0.13.0';
-const BUILD_DATE = '2026-06-26';
+const APP_VERSION = 'v0.14.0';
+const BUILD_DATE = '2026-06-28';
 
 import { loadData, loadSquads } from './data';
 import { loadESPN } from './espn';
 import { ScheduleView } from './ui/ScheduleView';
 import { GroupsView } from './ui/GroupsView';
-import { TeamsView } from './ui/TeamsView';
+import { TeamsView, TeamDetailPage } from './ui/TeamsView';
 import { BracketView } from './ui/BracketView';
-import { $data, $espn, $tab, $today } from './state';
+import { CatalogView } from './ui/CatalogView';
+import { $data, $espn, $today } from './state';
 import { useStore } from './hooks/useStore';
 
 // Side effects
@@ -20,18 +25,12 @@ loadSquads();
 loadESPN();
 setInterval(loadESPN, 60000);
 
-interface TabDef {
-  id: string;
-  l: string;
-}
-
-const TABS: TabDef[] = [
-  { id: 'schedule', l: '📅 Schedule' },
-  { id: 'groups', l: '🔡 Groups' },
-  { id: 'bracket', l: '🏆 Bracket' },
-  { id: 'teams', l: '⚽ Teams' },
+const TABS = [
+  { id: 'schedule', path: '/',        l: '📅 Schedule' },
+  { id: 'groups',   path: '/groups',  l: '🔡 Groups' },
+  { id: 'bracket',  path: '/bracket', l: '🏆 Bracket' },
+  { id: 'teams',    path: '/teams',   l: '⚽ Teams' },
 ];
-
 
 function TodayButton() {
   const data = useStore($data);
@@ -68,7 +67,7 @@ function TodayButton() {
         cursor: 'pointer',
       }}
       onClick={() => {
-        $tab.set('schedule');
+        navigate('/');
         setTimeout(() => {
           const liveCard = document.querySelector('[data-live="true"]');
           if (liveCard) {
@@ -104,62 +103,59 @@ function TodayButton() {
   );
 }
 
-interface TabBarProps {
-  activeTab: string;
-  onTabChange: (id: string) => void;
-}
+function TabBar() {
+  const [routerState] = useRouter();
+  const currentPath = routerState?.url ?? hashHistory.location.pathname;
 
-function TabBar({ activeTab, onTabChange }: TabBarProps) {
+  function isActive(tabPath: string, tabId: string) {
+    if (tabPath === '/') return currentPath === '/';
+    // Teams tab is active for both /teams and /teams/:team
+    if (tabId === 'teams') return currentPath.startsWith('/teams');
+    return currentPath.startsWith(tabPath);
+  }
+
   return (
     <div style={{ display: 'flex', gap: '2px', overflowX: 'auto' }}>
-      {TABS.map(t => (
-        <button
-          key={t.id}
-          onClick={() => onTabChange(t.id)}
-          style={{
-            padding: '8px 12px',
-            fontSize: '13px',
-            fontWeight: '500',
-            borderRadius: '8px 8px 0 0',
-            whiteSpace: 'nowrap',
-            background: activeTab === t.id ? 'rgba(255,255,255,0.07)' : 'transparent',
-            borderBottom: activeTab === t.id ? '2px solid #3b82f6' : '2px solid transparent',
-            color: activeTab === t.id ? '#e2e8f0' : '#6b7280',
-            border: 'none',
-            cursor: 'pointer',
-          }}
-        >
-          {t.l}
-        </button>
-      ))}
+      {TABS.map(t => {
+        const active = isActive(t.path, t.id);
+        return (
+          <button
+            key={t.id}
+            onClick={() => navigate(t.path)}
+            style={{
+              padding: '8px 12px',
+              fontSize: '13px',
+              fontWeight: '500',
+              borderRadius: '8px 8px 0 0',
+              whiteSpace: 'nowrap',
+              background: active ? 'rgba(255,255,255,0.07)' : 'transparent',
+              borderBottom: active ? '2px solid #3b82f6' : '2px solid transparent',
+              color: active ? '#e2e8f0' : '#6b7280',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {t.l}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-function ContentArea({ tab }: { tab: string }) {
-  const INNER_MAX: Record<string, string> = {
-    bracket: '100%',
-    schedule: '768px',
-    groups: '768px',
-    teams: '768px',
-  };
-
-  return (
-    <div style={{ maxWidth: INNER_MAX[tab] || '768px', margin: '0 auto' }}>
-      {tab === 'schedule' && <ScheduleView />}
-      {tab === 'groups' && <GroupsView />}
-      {tab === 'bracket' && <BracketView />}
-      {tab === 'teams' && <TeamsView />}
-    </div>
-  );
+function useHashPath() {
+  const [path, setPath] = useState(() => window.location.hash.replace(/^#/, '') || '/');
+  useEffect(() => {
+    const h = () => setPath(window.location.hash.replace(/^#/, '') || '/');
+    window.addEventListener('hashchange', h);
+    return () => window.removeEventListener('hashchange', h);
+  }, []);
+  return path;
 }
 
 function App() {
-  const tab = useStore($tab);
-
-  const handleTabChange = (newTab: string) => {
-    $tab.set(newTab);
-  };
+  const hashPath = useHashPath();
+  const innerMax = hashPath.startsWith('/bracket') ? '100%' : '768px';
 
   return (
     <div
@@ -205,12 +201,21 @@ function App() {
             </div>
             <TodayButton />
           </div>
-          <TabBar activeTab={tab} onTabChange={handleTabChange} />
+          <TabBar />
         </div>
       </div>
 
       <div style={{ flex: 1, maxWidth: '1400px', margin: '0 auto', padding: '16px', width: '100%' }}>
-        <ContentArea tab={tab} />
+        <div style={{ maxWidth: innerMax, margin: '0 auto' }}>
+        <Router history={hashHistory}>
+          <Route path="/" component={ScheduleView} />
+          <Route path="/groups" component={GroupsView} />
+          <Route path="/bracket" component={BracketView} />
+          <Route path="/teams" component={TeamsView} />
+          <Route path="/teams/:team" component={TeamDetailPage} />
+          <Route default component={ScheduleView} />
+        </Router>
+        </div>
       </div>
 
       <div
@@ -238,4 +243,5 @@ function App() {
   );
 }
 
-render(<App />, document.getElementById('root')!);
+const isDevCatalog = import.meta.env.DEV && window.location.search.includes('catalog');
+render(isDevCatalog ? <CatalogView /> : <App />, document.getElementById('root')!);
