@@ -3,3 +3,6 @@ dist
 .DS_Store
 *.local
 ds-bundle/
+.playwright-mcp/
+test-results/
+playwright-report/

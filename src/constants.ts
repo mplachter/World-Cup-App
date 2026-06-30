@@ -101,6 +101,32 @@ export function stageOf(r: string | null): string {
   return "group";
 }
 
+// ─── BRACKET TREE ─────────────────────────────────────────────────────────────
+// Knockout-stage match pairings (left/right half of the draw), per FIFA's published
+// bracket. Single source of truth shared by simulation.ts (Monte Carlo propagation)
+// and BracketView.tsx (layout + round-list navigation).
+export const BRACKET_BL = { r32: [74, 76, 73, 75, 78, 77, 81, 82], r16: [89, 90, 91, 92], qf: [97, 99] };
+export const BRACKET_BR = { r32: [83, 84, 85, 87, 80, 86, 88, 79], r16: [93, 94, 95, 96], qf: [98, 100] };
+
+// BRACKET_FEEDS[num] = the two match numbers whose winners fill `num`'s home/away slots.
+export const BRACKET_FEEDS: Record<number, { home: number; away: number }> = {};
+export const BRACKET_NEXT: Record<number, number> = {};
+export const BRACKET_SIBLING: Record<number, number> = {};
+function _bracketPair(arr: number[], nextArr: number[]) {
+  for (let i = 0; i < arr.length; i += 2) {
+    const a = arr[i], b = arr[i + 1], n = nextArr[i / 2];
+    BRACKET_NEXT[a] = n; BRACKET_NEXT[b] = n;
+    BRACKET_SIBLING[a] = b; BRACKET_SIBLING[b] = a;
+    BRACKET_FEEDS[n] = { home: a, away: b };
+  }
+}
+_bracketPair(BRACKET_BL.r32, BRACKET_BL.r16); _bracketPair(BRACKET_BR.r32, BRACKET_BR.r16);
+_bracketPair(BRACKET_BL.r16, BRACKET_BL.qf); _bracketPair(BRACKET_BR.r16, BRACKET_BR.qf);
+_bracketPair([97, 98, 99, 100], [101, 102]);
+_bracketPair([101, 102], [104]);
+// Third-place match 103 is fed by the *losers* of both semifinals (101, 102).
+export const BRACKET_THIRD_PLACE_FEEDS = { home: 101, away: 102 };
+
 export function localTime(t: string): string {
   if (!t) return '';
   const m = t.match(/(\d+):(\d+)\s*UTC([+-]\d+)/);
