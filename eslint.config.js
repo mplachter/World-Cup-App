@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import eslintConfigPrettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   js.configs.recommended,
@@ -11,9 +12,13 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'no-unused-vars': 'off', // handled by @typescript-eslint/no-unused-vars
       // Allow @ts-nocheck during JS→TS migration (remove once main.ts is fully typed)
-      '@typescript-eslint/ban-ts-comment': ['error', { minimumDescriptionLength: 3, 'ts-nocheck': false }],
+      '@typescript-eslint/ban-ts-comment': [
+        'error',
+        { minimumDescriptionLength: 3, 'ts-nocheck': false },
+      ],
       // Intentional empty catch blocks (localStorage / fetch silently degrade)
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
+  eslintConfigPrettier,
 );

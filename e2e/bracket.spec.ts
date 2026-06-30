@@ -32,7 +32,9 @@ test('bracket view renders all rounds with no thrown errors', async ({ page }) =
   expect(errors).toEqual([]);
 });
 
-test('a row with a visible score never displays an unresolved team (live/today match regression)', async ({ page }) => {
+test('a row with a visible score never displays an unresolved team (live/today match regression)', async ({
+  page,
+}) => {
   await openBracket(page);
 
   // A scoreline only renders once entry/ESPN data identifies the real teams
@@ -40,7 +42,7 @@ test('a row with a visible score never displays an unresolved team (live/today m
   // "unknown" would mean the team name fell back to a probabilistic TBD slot
   // despite a result already being known — exactly the live-match regression.
   const scoredUnresolvedRows = page.locator(
-    '[data-testid="bracket-team-row"][data-has-score="true"][data-confidence="unknown"]'
+    '[data-testid="bracket-team-row"][data-has-score="true"][data-confidence="unknown"]',
   );
   await expect(scoredUnresolvedRows).toHaveCount(0);
 });
@@ -50,7 +52,7 @@ test('knockout rounds beyond R32 are populated once any R32 match is decided', a
 
   const lockedOrPredictedR32 = page.locator(
     '[data-testid="bracket-slot"] [data-testid="bracket-team-row"][data-confidence="confirmed"], ' +
-    '[data-testid="bracket-slot"] [data-testid="bracket-team-row"][data-confidence="locked"]'
+      '[data-testid="bracket-slot"] [data-testid="bracket-team-row"][data-confidence="locked"]',
   );
   const anyR32Decided = (await lockedOrPredictedR32.count()) > 0;
   test.skip(!anyR32Decided, 'no R32 result available yet in current tournament data');
@@ -59,7 +61,11 @@ test('knockout rounds beyond R32 are populated once any R32 match is decided', a
   // should have populated at least one downstream slot with real or candidate
   // data instead of a flat "TBD" double-unknown row.
   const r16Nums = [89, 90, 91, 92, 93, 94, 95, 96];
-  const downstreamSlots = page.locator(r16Nums.map(n => `[data-testid="bracket-slot"][data-match-num="${n}"]`).join(', '));
-  const resolvedRows = downstreamSlots.locator('[data-testid="bracket-team-row"]:not([data-confidence="unknown"])');
+  const downstreamSlots = page.locator(
+    r16Nums.map((n) => `[data-testid="bracket-slot"][data-match-num="${n}"]`).join(', '),
+  );
+  const resolvedRows = downstreamSlots.locator(
+    '[data-testid="bracket-team-row"]:not([data-confidence="unknown"])',
+  );
   await expect(resolvedRows.first()).toBeVisible({ timeout: 15_000 });
 });

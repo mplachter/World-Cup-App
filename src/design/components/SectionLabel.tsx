@@ -8,8 +8,6 @@ interface SectionLabelProps {
 
 export function SectionLabel({ children, mb }: SectionLabelProps) {
   return (
-    <div style={{ ...sectionLabel, marginBottom: mb ?? sectionLabel.marginBottom }}>
-      {children}
-    </div>
+    <div style={{ ...sectionLabel, marginBottom: mb ?? sectionLabel.marginBottom }}>{children}</div>
   );
 }

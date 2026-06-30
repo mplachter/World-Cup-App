@@ -12,9 +12,5 @@ interface PanelProps {
 }
 
 export function Panel({ variant = 'base', padding = space.md, children, style }: PanelProps) {
-  return (
-    <div style={{ ...panel[variant], padding, overflow: 'hidden', ...style }}>
-      {children}
-    </div>
-  );
+  return <div style={{ ...panel[variant], padding, overflow: 'hidden', ...style }}>{children}</div>;
 }

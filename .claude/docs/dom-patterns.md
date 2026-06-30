@@ -5,12 +5,13 @@ All DOM creation goes through a single `ce` function and its shortcuts in [`src/
 ## The `ce` Function
 
 ```typescript
-function ce(tag: string, attrs?: Attrs, ...children: Children[]): HTMLElement
+function ce(tag: string, attrs?: Attrs, ...children: Children[]): HTMLElement;
 ```
 
 Creates an element by tag name, applies attributes, and appends children.
 
 **Parameters:**
+
 - `tag: string` — HTML tag (e.g., `'div'`, `'button'`, `'input'`)
 - `attrs?: Attrs` — properties and event listeners (see below)
 - `...children: Children[]` — nested elements, text, or arrays (recursively flattened)
@@ -23,32 +24,36 @@ Type: `Record<string, unknown> | null | undefined`
 
 Special handling for common patterns:
 
-| Attribute | Handling |
-|---|---|
-| `style` | Object: `Object.assign(el.style, {...})` |
+| Attribute               | Handling                                                      |
+| ----------------------- | ------------------------------------------------------------- |
+| `style`                 | Object: `Object.assign(el.style, {...})`                      |
 | `on*` (e.g., `onClick`) | Function: `addEventListener(name.slice(2).toLowerCase(), fn)` |
-| `className` | String: `el.className = ...` |
-| `id` | String: `el.id = ...` |
-| `value` | String: `(el as HTMLInputElement).value = ...` |
-| Others | `setAttribute(key, String(value))` |
+| `className`             | String: `el.className = ...`                                  |
+| `id`                    | String: `el.id = ...`                                         |
+| `value`                 | String: `(el as HTMLInputElement).value = ...`                |
+| Others                  | `setAttribute(key, String(value))`                            |
 
 **Examples:**
 
 ```typescript
 // Click listener
-ce('button', { onClick: () => alert('Hi') }, 'Click me')
+ce('button', { onClick: () => alert('Hi') }, 'Click me');
 
 // Styles
-ce('div', {
-  style: {
-    backgroundColor: 'red',
-    padding: '10px',
-    cursor: 'pointer'
-  }
-}, 'Styled')
+ce(
+  'div',
+  {
+    style: {
+      backgroundColor: 'red',
+      padding: '10px',
+      cursor: 'pointer',
+    },
+  },
+  'Styled',
+);
 
 // Data attributes
-ce('div', { 'data-match-id': '123' }, '...')
+ce('div', { 'data-match-id': '123' }, '...');
 
 // Mixed
 ce('input', {
@@ -56,8 +61,8 @@ ce('input', {
   className: 'input-field',
   value: 'default',
   onInput: (e) => console.log(e.target.value),
-  placeholder: 'Search...'
-})
+  placeholder: 'Search...',
+});
 ```
 
 ### Children Types
@@ -68,6 +73,7 @@ type Children = Child | Child[];
 ```
 
 **Behavior:**
+
 - Elements → appended directly
 - Strings/numbers → converted to text nodes
 - Null/false → skipped (safe for conditionals)
@@ -77,36 +83,31 @@ type Children = Child | Child[];
 
 ```typescript
 // Simple
-ce('p', null, 'Hello world')
+ce('p', null, 'Hello world');
 
 // Multiple children
-ce('div', null,
-  ce('h1', null, 'Title'),
-  ce('p', null, 'Paragraph')
-)
+ce('div', null, ce('h1', null, 'Title'), ce('p', null, 'Paragraph'));
 
 // Arrays (automatically flattened)
-const items = [1, 2, 3].map(n => ce('li', null, String(n)));
-ce('ul', null, items)  // → <ul><li>1</li><li>2</li><li>3</li></ul>
+const items = [1, 2, 3].map((n) => ce('li', null, String(n)));
+ce('ul', null, items); // → <ul><li>1</li><li>2</li><li>3</li></ul>
 
 // Conditionals (null is safe)
-ce('div', null,
+ce(
+  'div',
+  null,
   ce('p', null, 'Header'),
   condition ? ce('p', null, 'Shown') : null,
-  ce('p', null, 'Footer')
-)
+  ce('p', null, 'Footer'),
+);
 
 // Nested arrays
-ce('div', null,
-  [
-    ce('span', null, 'A'),
-    ce('span', null, 'B')
-  ],
-  [
-    ce('span', null, 'C'),
-    ce('span', null, 'D')
-  ]
-)
+ce(
+  'div',
+  null,
+  [ce('span', null, 'A'), ce('span', null, 'B')],
+  [ce('span', null, 'C'), ce('span', null, 'D')],
+);
 // → <div><span>A</span><span>B</span><span>C</span><span>D</span></div>
 ```
 
@@ -115,27 +116,28 @@ ce('div', null,
 Type-specific helpers that are just `ce` with the tag pre-filled:
 
 ```typescript
-export const div  = (a: Attrs, ...c: Children[]) => ce('div', a, ...c);
+export const div = (a: Attrs, ...c: Children[]) => ce('div', a, ...c);
 export const span = (a: Attrs, ...c: Children[]) => ce('span', a, ...c);
-export const btn  = (a: Attrs, ...c: Children[]) => ce('button', a, ...c);
-export const inp  = (a: Attrs) => ce('input', a) as HTMLInputElement;
+export const btn = (a: Attrs, ...c: Children[]) => ce('button', a, ...c);
+export const inp = (a: Attrs) => ce('input', a) as HTMLInputElement;
 
-export const svg = (attrs: Attrs, ...c: Children[]) => { /* ... */ };
-export const path = (attrs: Attrs) => { /* ... */ };
+export const svg = (attrs: Attrs, ...c: Children[]) => {
+  /* ... */
+};
+export const path = (attrs: Attrs) => {
+  /* ... */
+};
 ```
 
 **Examples:**
 
 ```typescript
 // Instead of ce('div', ...) use div(...)
-div({ className: 'card' },
-  span(null, 'Hello'),
-  btn({ onClick: handleClick }, 'Button')
-)
+div({ className: 'card' }, span(null, 'Hello'), btn({ onClick: handleClick }, 'Button'));
 
 // Input returns HTMLInputElement for convenience
 const input = inp({ id: 'name', value: 'default' });
-input.value = 'updated';  // No cast needed
+input.value = 'updated'; // No cast needed
 ```
 
 ---
@@ -145,15 +147,18 @@ input.value = 'updated';  // No cast needed
 ### Match Card Header
 
 ```typescript
-const header = div({ className: 'match-header' },
-  div({ className: 'teams' },
+const header = div(
+  { className: 'match-header' },
+  div(
+    { className: 'teams' },
     span({ className: 'team home' }, matchTeamHome),
     span({ className: 'divider' }, 'vs'),
-    span({ className: 'team away' }, matchTeamAway)
+    span({ className: 'team away' }, matchTeamAway),
   ),
-  div({ className: 'score' },
-    matchScore ? span(null, matchScore) : span({ className: 'tbd' }, 'TBD')
-  )
+  div(
+    { className: 'score' },
+    matchScore ? span(null, matchScore) : span({ className: 'tbd' }, 'TBD'),
+  ),
 );
 ```
 
@@ -161,14 +166,16 @@ const header = div({ className: 'match-header' },
 
 ```typescript
 function renderMatches(matches) {
-  return div({ className: 'match-list' },
-    matches.map(match =>
-      div({ className: 'match-item', key: match.id },
+  return div(
+    { className: 'match-list' },
+    matches.map((match) =>
+      div(
+        { className: 'match-item', key: match.id },
         span(null, match.home),
         span(null, match.score ?? 'vs'),
-        span(null, match.away)
-      )
-    )
+        span(null, match.away),
+      ),
+    ),
   );
 }
 ```
@@ -176,21 +183,27 @@ function renderMatches(matches) {
 ### Form
 
 ```typescript
-const form = div({ className: 'form' },
-  div({ className: 'field' },
+const form = div(
+  { className: 'form' },
+  div(
+    { className: 'field' },
     inp({
       id: 'email',
       type: 'email',
       placeholder: 'you@example.com',
-      onInput: (e) => handleEmailChange(e.target.value)
-    })
+      onInput: (e) => handleEmailChange(e.target.value),
+    }),
   ),
-  div({ className: 'field' },
-    btn({
-      onClick: handleSubmit,
-      style: { marginTop: '1rem', cursor: 'pointer' }
-    }, 'Submit')
-  )
+  div(
+    { className: 'field' },
+    btn(
+      {
+        onClick: handleSubmit,
+        style: { marginTop: '1rem', cursor: 'pointer' },
+      },
+      'Submit',
+    ),
+  ),
 );
 ```
 
@@ -198,15 +211,17 @@ const form = div({ className: 'form' },
 
 ```typescript
 function bracketCell(team, probability) {
-  return div({ className: 'bracket-slot' },
+  return div(
+    { className: 'bracket-slot' },
     div({ className: 'team-name' }, team),
-    svg({ width: '100', height: '20', style: { marginTop: '5px' } },
+    svg(
+      { width: '100', height: '20', style: { marginTop: '5px' } },
       path({
         d: `M 0 10 L ${probability * 100} 10`,
         stroke: 'blue',
-        strokeWidth: '2'
-      })
-    )
+        strokeWidth: '2',
+      }),
+    ),
   );
 }
 ```
@@ -219,20 +234,21 @@ Event listeners are attached via `on*` attributes:
 
 ```typescript
 // Click
-ce('button', { onClick: (e) => console.log(e) }, 'Click')
+ce('button', { onClick: (e) => console.log(e) }, 'Click');
 
 // Input
-ce('input', { onInput: (e) => console.log(e.target.value) })
+ce('input', { onInput: (e) => console.log(e.target.value) });
 
 // Change
-ce('select', { onChange: (e) => console.log(e.target.value) })
+ce('select', { onChange: (e) => console.log(e.target.value) });
 
 // Custom events (any `on*` works)
 element.dispatchEvent(new CustomEvent('custom'));
-ce('div', { onCustom: (e) => console.log('Custom event!') })
+ce('div', { onCustom: (e) => console.log('Custom event!') });
 ```
 
 **Event handler signature:**
+
 ```typescript
 type EventHandler = (event: Event) => void;
 ```
@@ -244,8 +260,8 @@ ce('input', {
   onInput: (e) => {
     const target = e.target as HTMLInputElement;
     console.log(target.value);
-  }
-})
+  },
+});
 ```
 
 ---
@@ -257,14 +273,18 @@ ce('input', {
 Pass an object to the `style` attribute:
 
 ```typescript
-ce('div', {
-  style: {
-    backgroundColor: 'blue',
-    padding: '10px',
-    marginTop: '1rem',
-    border: '1px solid gray'
-  }
-}, 'Styled')
+ce(
+  'div',
+  {
+    style: {
+      backgroundColor: 'blue',
+      padding: '10px',
+      marginTop: '1rem',
+      border: '1px solid gray',
+    },
+  },
+  'Styled',
+);
 ```
 
 CSS properties use camelCase (not kebab-case). `Object.assign` merges them into the element's `.style` object.
@@ -274,20 +294,20 @@ CSS properties use camelCase (not kebab-case). `Object.assign` merges them into 
 Use `className`:
 
 ```typescript
-ce('div', { className: 'card primary large' }, 'Content')
+ce('div', { className: 'card primary large' }, 'Content');
 
 // Dynamic classes (concatenate strings)
 const isActive = true;
-ce('div', { className: `card ${isActive ? 'active' : ''}` }, '...')
+ce('div', { className: `card ${isActive ? 'active' : ''}` }, '...');
 
 // Multiple classes as template string
-ce('div', {
-  className: [
-    'card',
-    isActive && 'active',
-    isPrimary && 'primary'
-  ].filter(Boolean).join(' ')
-}, '...')
+ce(
+  'div',
+  {
+    className: ['card', isActive && 'active', isPrimary && 'primary'].filter(Boolean).join(' '),
+  },
+  '...',
+);
 ```
 
 ---
@@ -312,10 +332,10 @@ Or modify via subscriptions:
 ```typescript
 const container = div({ className: 'content' });
 
-$data.sub(data => {
+$data.sub((data) => {
   container.innerHTML = ''; // Clear
   if (data) {
-    data.all.forEach(match => {
+    data.all.forEach((match) => {
       container.appendChild(matchCard(match));
     });
   }
@@ -327,6 +347,7 @@ $data.sub(data => {
 ## No VDOM, No Reconciliation
 
 Unlike frameworks (React, Vue), updates are **direct DOM mutations**. This is:
+
 - ✅ Fast for small data sets
 - ✅ Simple to reason about
 - ✅ No library overhead
@@ -377,28 +398,23 @@ function button(attrs: ButtonAttrs, ...children: Children[]) {
 
 ```typescript
 // ❌ Wrong: attrs is treated as a child
-ce('div', { className: 'card' }, 'Text 1', 'Text 2')
+ce('div', { className: 'card' }, 'Text 1', 'Text 2');
 // Creates: <div class="card">Text 1Text 2</div>
 
 // ✅ Correct: use array if multiple children without nesting
-ce('div', { className: 'card' }, ['Text 1', 'Text 2'])
+ce('div', { className: 'card' }, ['Text 1', 'Text 2']);
 // or
-ce('div', { className: 'card' },
-  'Text 1',
-  'Text 2'
-)
+ce('div', { className: 'card' }, 'Text 1', 'Text 2');
 ```
 
 ### 2. Null in children requires `Children` type for conditionals
 
 ```typescript
 // ✅ Safe
-ce('div', null,
-  condition ? ce('p', null, 'Yes') : null
-)
+ce('div', null, condition ? ce('p', null, 'Yes') : null);
 
 // ❌ Less ideal (no null coercion for individual items in the rest params)
-ce('div', null, condition ? ce('p', null, 'Yes') : false)
+ce('div', null, condition ? ce('p', null, 'Yes') : false);
 // Works but false isn't skipped in rest params; use null instead
 ```
 
@@ -409,8 +425,8 @@ ce('div', null, condition ? ce('p', null, 'Yes') : false)
 ce('input', {
   onInput: (e) => {
     const value = (e.target as HTMLInputElement).value;
-  }
-})
+  },
+});
 ```
 
 ### 4. Modifying returned element

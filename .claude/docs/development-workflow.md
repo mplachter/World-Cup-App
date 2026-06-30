@@ -48,6 +48,7 @@ git push -u origin HEAD
 **Format:** `<subject> + body (optional)`
 
 Good examples:
+
 - `Extract ESPN parsing into separate module`
 - `Fix suspension logic for discipline block 3`
 - `Improve bracket projection with Elo weighting`
@@ -55,6 +56,7 @@ Good examples:
 - `Add suspensions prefetch for upcoming matches`
 
 **Don't:**
+
 - `Fix bug` (what bug?)
 - `Update code` (what changed?)
 - `WIP` (commit something meaningful)
@@ -115,6 +117,7 @@ npm run preview  # Serve dist/ on localhost
 ### 1. Understand the Current State
 
 Read the relevant modules:
+
 - **Adding state?** Look at `src/state.ts`
 - **Adding a view?** Look at `src/ui/*.ts`
 - **Adding data logic?** Look at `src/data.ts`, `src/espn.ts`, `src/suspensions.ts`
@@ -122,13 +125,13 @@ Read the relevant modules:
 
 ### 2. Decide Where It Lives
 
-| Feature | Belongs in |
-|---|---|
-| New reactive store | `src/state.ts` |
-| New view (schedule/groups/bracket/teams) | `src/ui/*.ts` (new file) |
-| New calculation | `src/constants.ts` (small) or new module (complex) |
-| New data source | `src/data.ts` or `src/espn.ts` |
-| New domain logic | New module or existing domain module |
+| Feature                                  | Belongs in                                         |
+| ---------------------------------------- | -------------------------------------------------- |
+| New reactive store                       | `src/state.ts`                                     |
+| New view (schedule/groups/bracket/teams) | `src/ui/*.ts` (new file)                           |
+| New calculation                          | `src/constants.ts` (small) or new module (complex) |
+| New data source                          | `src/data.ts` or `src/espn.ts`                     |
+| New domain logic                         | New module or existing domain module               |
 
 ### 3. Create Types First
 
@@ -176,10 +179,9 @@ import { div, span } from '../dom';
 import type { MyFeature } from '../types';
 
 export function myFeatureView(features: MyFeature[]) {
-  return div({ className: 'my-feature' },
-    features.map(f =>
-      div({ className: 'item' }, f.name)
-    )
+  return div(
+    { className: 'my-feature' },
+    features.map((f) => div({ className: 'item' }, f.name)),
   );
 }
 ```
@@ -192,7 +194,7 @@ Import and initialize:
 import { computeMyFeature } from './myfeature';
 import { $myFeature } from './state';
 
-$data.sub(data => {
+$data.sub((data) => {
   if (data) {
     $myFeature.set(computeMyFeature(data));
   }
@@ -260,16 +262,16 @@ window.__WC_ESPN_DUMPED = true;
 
 ```javascript
 // In browser console
-localStorage;                    // View all keys
-localStorage.getItem('wc2026:tab');  // Get a specific value
-localStorage.clear();            // Clear all (careful!)
+localStorage; // View all keys
+localStorage.getItem('wc2026:tab'); // Get a specific value
+localStorage.clear(); // Clear all (careful!)
 ```
 
 ### Check Simulated Data
 
 ```typescript
 // During a simulation, the $sim store contains:
-$sim.get()
+$sim.get();
 // {
 //   status: 'running' | 'done',
 //   data: bracketProjection,
@@ -313,6 +315,7 @@ No unit test framework is set up. Instead:
 4. **Build verification** ensures the code tree-shakes cleanly (`npm run build`)
 
 If you're adding complex logic (like suspension calculation or bracket projection), test it manually:
+
 1. Write the function
 2. Call it in browser console with test data
 3. Verify the output
@@ -349,31 +352,37 @@ push to main (after merge)
 ## Troubleshooting
 
 ### `npm install` fails
+
 - Delete `node_modules/` and `package-lock.json`
 - Run `npm install` again
 - Ensure Node 18+ installed
 
 ### TypeScript errors after changes
+
 - Run `npm run typecheck` to see all errors
 - Check `src/types.ts` for the correct interface
 - Cast with `as Type` if necessary (use sparingly)
 
 ### Linting errors
+
 - Run `eslint src --fix` to auto-fix most
 - Read the error message; usually clear
 
 ### Build fails
+
 - Check the error message for which file
 - Verify imports are correct
 - Run `npm run typecheck` first to catch errors early
 
 ### App doesn't work locally
+
 - Check browser console for errors (`F12`)
 - Verify `npm run dev` is running
 - Hard refresh (`Ctrl+Shift+R`)
 - Check that localhost:5173 is open (not another port due to conflict)
 
 ### Data not loading
+
 - Check Network tab in dev tools
 - Verify CDN is reachable (GitHub Raw / jsDelivr)
 - Check browser console for fetch errors

@@ -34,7 +34,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          GITHUB_ACTIONS: true  # tells vite.config.ts to use /World-Cup-App/ base
+          GITHUB_ACTIONS: true # tells vite.config.ts to use /World-Cup-App/ base
 
       - uses: actions/configure-pages@v4
 
