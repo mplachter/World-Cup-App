@@ -1,6 +1,8 @@
 import type { Match } from './types';
-import { FIFA, GROUPS, pkey, calcStandings, getMatchWinner, BRACKET_FEEDS, BRACKET_THIRD_PLACE_FEEDS } from './constants';
+import { FIFA, GROUPS, pkey, calcStandings, getMatchWinner, parseScore, normName, getPlayerRank, BRACKET_FEEDS, BRACKET_THIRD_PLACE_FEEDS } from './constants';
 import { createStore } from './store';
+import { SQUADS } from './state';
+import { computeSuspensions, prefetchSuspensionData } from './suspensions';
 import annexCData from './data/annex-c.json';
 
 export const $sim = createStore<{ status:string; data:unknown; trials:number; completed:number; elapsedMs:number; key:string; cachedKey:string; savedAt?:number }>(
@@ -8,7 +10,7 @@ export const $sim = createStore<{ status:string; data:unknown; trials:number; co
 );
 export const SIM_TRIALS_DEFAULT = 5000;
 export const SIM_CHUNK = 250;
-export const SIM_LS_KEY = 'wc2026:sim:v6'; // v6: assignThirds uses canonical FIFA Annex C lookup
+export const SIM_LS_KEY = 'wc2026:sim:v7'; // v7: adds recent-form and suspension Elo adjustments
 let _simCancelled = false;
 
 function loadCachedSim() {
@@ -102,7 +104,7 @@ function assignThirds(thirdGroups: string[], randomize: boolean): Record<number,
 }
 
 // ─── MONTE CARLO SIMULATOR ───────────────────────────────────────────────────
-function rankToElo(rank: number): number {
+export function rankToElo(rank: number): number {
   if (!rank || rank > 200) return 1500;
   return 2080 - (rank - 1) * 9;
 }
@@ -113,23 +115,134 @@ function poissonSample(lambda: number): number {
   do { k++; p *= Math.random(); } while (p > L);
   return k - 1;
 }
-function eloExpectation(home: string, away: string): number {
-  const eH = rankToElo(FIFA[home]);
-  const eA = rankToElo(FIFA[away]);
+// dHome/dAway are Elo adjustments layered on top of the static FIFA-rank Elo —
+// recent form and (for a team's immediate next match only) suspension impact.
+export function eloExpectation(home: string, away: string, dHome = 0, dAway = 0): number {
+  const eH = rankToElo(FIFA[home]) + dHome;
+  const eA = rankToElo(FIFA[away]) + dAway;
   return 1 / (1 + Math.pow(10, (eA - eH) / 400));
 }
-function simulateMatch(home: string, away: string): { h: number; a: number } {
-  const expH = eloExpectation(home, away);
+function simulateMatch(home: string, away: string, dHome = 0, dAway = 0): { h: number; a: number } {
+  const expH = eloExpectation(home, away, dHome, dAway);
   const lH = Math.max(0.25, 1.35 + 1.4 * (expH - 0.5));
   const lA = Math.max(0.25, 1.35 + 1.4 * ((1 - expH) - 0.5));
   return { h: poissonSample(lH), a: poissonSample(lA) };
 }
 // Knockout matches can't end level — fall back to a penalty-shootout coin flip
 // weighted by Elo when regulation+ET nets a draw.
-function simulateKnockoutWinner(home: string, away: string): string {
-  const r = simulateMatch(home, away);
+function simulateKnockoutWinner(home: string, away: string, dHome = 0, dAway = 0): string {
+  const r = simulateMatch(home, away, dHome, dAway);
   if (r.h !== r.a) return r.h > r.a ? home : away;
-  return Math.random() < eloExpectation(home, away) ? home : away;
+  return Math.random() < eloExpectation(home, away, dHome, dAway) ? home : away;
+}
+
+// ─── FORM / MOMENTUM & SUSPENSIONS ───────────────────────────────────────────
+const TEAM_GROUP: Record<string, string> = {};
+Object.entries(GROUPS).forEach(([g, teams]) => teams.forEach(t => { TEAM_GROUP[t] = g; }));
+
+const FORM_WEIGHTS = [0.5, 0.3, 0.2]; // most recent match first
+const FORM_ELO_CAP = 60;
+const DEAD_RUBBER_WEIGHT_MULT = 0.2; // discount, don't drop — a rotated loss still carries a little signal
+const SUSPENSION_ELO_CAP = 60;
+
+// Whether `team` had already mathematically clinched a top-2 (qualifying) group
+// finish using only matches with `date < beforeDate` — used to discount dead
+// rubbers (teams resting starters once already through) in the form score.
+export function isClinchedTop2(team: string, group: string, filteredByKey: Record<string, Match>): boolean {
+  const std = calcStandings(group, filteredByKey);
+  const me = std.find(r => r.team === team);
+  if (!me) return false;
+  const totalGames = GROUPS[group].length - 1;
+  const remaining: Record<string, number> = {};
+  std.forEach(r => { remaining[r.team] = totalGames - r.mp; });
+  const myGd = me.gf - me.ga;
+  let threats = 0;
+  for (const r of std) {
+    if (r.team === team) continue;
+    const maxPts = r.pts + 3 * remaining[r.team];
+    if (maxPts > me.pts) { threats++; continue; }
+    if (maxPts === me.pts) {
+      const maxGd = (r.gf - r.ga) + 3 * remaining[r.team];
+      if (maxGd >= myGd) threats++;
+    }
+  }
+  return threats < 2;
+}
+export function wasAlreadyQualifiedBefore(team: string, group: string, byKey: Record<string, Match>, beforeDate: string): boolean {
+  const filtered: Record<string, Match> = {};
+  Object.entries(byKey).forEach(([k, e]) => {
+    if (e.stage === 'group' && e.group === group && e.score && e.date && e.date < beforeDate) filtered[k] = e;
+  });
+  return isClinchedTop2(team, group, filtered);
+}
+
+// Recency-weighted result/goal-diff nudge from each team's last 3 completed
+// matches, converted to a capped Elo delta. Dead-rubber group games (played
+// after the team already clinched qualification) are heavily downweighted.
+export function computeFormDelta(byKey: Record<string, Match>): Record<string, number> {
+  const byTeam: Record<string, Match[]> = {};
+  Object.values(byKey).forEach(m => {
+    if (!m.score || !m.date) return;
+    (byTeam[m.home] ||= []).push(m);
+    (byTeam[m.away] ||= []).push(m);
+  });
+  const out: Record<string, number> = {};
+  Object.entries(byTeam).forEach(([team, matches]) => {
+    const recent = matches.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, FORM_WEIGHTS.length);
+    let weighted = 0, totalWeight = 0;
+    recent.forEach((m, i) => {
+      const sc = parseScore(m.score);
+      if (!sc) return;
+      const isHome = m.home === team;
+      const gf = isHome ? sc.h : sc.a, ga = isHome ? sc.a : sc.h;
+      const resultScore = gf > ga ? 1 : gf < ga ? -1 : 0;
+      const gdComponent = Math.max(-2, Math.min(2, gf - ga)) * 0.15;
+      let w = FORM_WEIGHTS[i];
+      if (m.stage === 'group' && m.group && wasAlreadyQualifiedBefore(team, m.group, byKey, m.date)) {
+        w *= DEAD_RUBBER_WEIGHT_MULT;
+      }
+      weighted += w * (resultScore + gdComponent);
+      totalWeight += w;
+    });
+    out[team] = totalWeight > 0
+      ? Math.max(-FORM_ELO_CAP, Math.min(FORM_ELO_CAP, (weighted / totalWeight) * FORM_ELO_CAP))
+      : 0;
+  });
+  return out;
+}
+
+// Best-effort suspended-player impact: star quality (PLAYER_RANK) × a position
+// multiplier (goalkeepers weighted heavier — squads carry few specialists).
+// There's no "is this player a starter" data available outside lazily-fetched
+// lineups, so this isn't a true missing-starter model, just a useful proxy.
+export function suspensionBasePenalty(rank: number | null): number {
+  if (rank && rank <= 10) return 35;
+  if (rank && rank <= 30) return 20;
+  return 8;
+}
+export function suspensionPositionMultiplier(pos: string | undefined): number {
+  return pos === 'GK' ? 1.6 : 1;
+}
+// Combines per-player base × position-multiplier penalties into one capped
+// team-level Elo delta — the piece worth unit-testing in isolation.
+export function combineSuspensionPenalty(players: { rank: number | null; pos?: string }[]): number {
+  if (!players.length) return 0;
+  const total = players.reduce((sum, p) => sum + suspensionBasePenalty(p.rank) * suspensionPositionMultiplier(p.pos), 0);
+  return -Math.min(SUSPENSION_ELO_CAP, total);
+}
+function findSquadPlayer(team: string, playerName: string) {
+  const squad = SQUADS[team];
+  if (!squad) return undefined;
+  const target = normName(playerName);
+  return squad.find(p => normName(p.name) === target);
+}
+function suspensionPenaltyForTeam(team: string, date: string, stage: string): number {
+  const { suspended } = computeSuspensions(team, date, stage);
+  if (!suspended.length) return 0;
+  return combineSuspensionPenalty(suspended.map(s => ({
+    rank: getPlayerRank(s.name),
+    pos: findSquadPlayer(team, s.name)?.pos,
+  })));
 }
 
 const R32_STRUCTURE = [
@@ -164,14 +277,14 @@ export async function startSimulation(byKey: Record<string, Match>, byNum: Recor
 
   // If a knockout match has an actual final result, use the real winner every
   // trial instead of resimulating it — same principle as `existing` for group games.
-  function decideWinner(num: number, home: string | undefined, away: string | undefined): string | undefined {
+  function decideWinner(num: number, home: string | undefined, away: string | undefined, dHome = 0, dAway = 0): string | undefined {
     if (!home || !away) return undefined;
     const real = byNum[String(num)];
     if (real && real.score && real.home === home && real.away === away) {
       const w = getMatchWinner(real);
       if (w) return w;
     }
-    return simulateKnockoutWinner(home, away);
+    return simulateKnockoutWinner(home, away, dHome, dAway);
   }
 
   const allGroupPairs: { key:string; group:string; home:string; away:string; existing: Match | null }[] = [];
@@ -185,12 +298,52 @@ export async function startSimulation(byKey: Record<string, Match>, byNum: Recor
     }
   });
 
+  // Recent-form Elo nudge, computed once from real results (doesn't vary by trial).
+  const formDelta = computeFormDelta(byKey);
+
+  // Suspension Elo nudge — only knowable for each team's immediate next unplayed
+  // fixture, since future-round suspensions depend on cards from hypothetical
+  // matches that haven't been simulated yet.
+  const teamNextGroupFixture: Record<string, { key: string; date: string }> = {};
+  allGroupPairs.forEach(p => {
+    if (p.existing) return;
+    const date = byKey[p.key]?.date || '';
+    [p.home, p.away].forEach(team => {
+      const cur = teamNextGroupFixture[team];
+      if (!cur || (date && date < cur.date)) teamNextGroupFixture[team] = { key: p.key, date };
+    });
+  });
+  const r32Dates = R32_STRUCTURE.map(s => byNum[String(s.num)]?.date).filter(Boolean) as string[];
+  const earliestR32Date = r32Dates.length ? r32Dates.slice().sort()[0] : '';
+
+  const suspensionDelta: Record<string, number> = {};
+  const suspensionGroupKey: Record<string, string> = {};
+  const suspensionKnockoutTeams = new Set<string>();
+  await Promise.all(Object.keys(TEAM_GROUP).map(async team => {
+    const nextGroup = teamNextGroupFixture[team];
+    const date = nextGroup ? nextGroup.date : earliestR32Date;
+    const stage = nextGroup ? 'group' : 'r32';
+    try { await prefetchSuspensionData(team, team, date); } catch { /* best-effort: missing data just means no penalty */ }
+    const penalty = suspensionPenaltyForTeam(team, date, stage);
+    if (!penalty) return;
+    suspensionDelta[team] = penalty;
+    if (nextGroup) suspensionGroupKey[team] = nextGroup.key;
+    else suspensionKnockoutTeams.add(team);
+  }));
+  if (_simCancelled) {
+    $sim.set({ status:'idle', data:null, trials:0, completed:0, elapsedMs:0,
+      key:'', cachedKey: $sim.get().cachedKey });
+    return;
+  }
+
   for (let trial = 0; trial < trials; trial++) {
     const simByKey: Record<string, Match> = {};
     for (const p of allGroupPairs) {
       if (p.existing) { simByKey[p.key] = p.existing; }
       else {
-        const r = simulateMatch(p.home, p.away);
+        const dH = (formDelta[p.home] || 0) + (suspensionGroupKey[p.home] === p.key ? suspensionDelta[p.home] : 0);
+        const dA = (formDelta[p.away] || 0) + (suspensionGroupKey[p.away] === p.key ? suspensionDelta[p.away] : 0);
+        const r = simulateMatch(p.home, p.away, dH, dA);
         simByKey[p.key] = { home:p.home, away:p.away, score: r.h+'-'+r.a, stage:'group', ht:null, pen:null, goals1:[], goals2:[], date:'', time:'', ground:null, round:null, num:null };
       }
     }
@@ -223,11 +376,15 @@ export async function startSimulation(byKey: Record<string, Match>, byNum: Recor
       slotTeam[s.num] = { home: hT, away: aT };
       if (hT) counts[s.num].home[hT] = (counts[s.num].home[hT] || 0) + 1;
       if (aT) counts[s.num].away[aT] = (counts[s.num].away[aT] || 0) + 1;
-      winnerOf[s.num] = decideWinner(s.num, hT, aT);
+      const dH = (formDelta[hT || ''] || 0) + (hT && suspensionKnockoutTeams.has(hT) ? suspensionDelta[hT] : 0);
+      const dA = (formDelta[aT || ''] || 0) + (aT && suspensionKnockoutTeams.has(aT) ? suspensionDelta[aT] : 0);
+      winnerOf[s.num] = decideWinner(s.num, hT, aT, dH, dA);
     }
 
     // Propagate winners forward through R16 → QF → SF (match numbers increase
-    // monotonically with round, so feeders are always already resolved).
+    // monotonically with round, so feeders are always already resolved). Only
+    // form carries forward here — suspensions are only known for each team's
+    // immediate next match, which was already applied at the R32 stage above.
     for (let num = 89; num <= 102; num++) {
       const feed = BRACKET_FEEDS[num];
       if (!feed) continue;
@@ -236,7 +393,7 @@ export async function startSimulation(byKey: Record<string, Match>, byNum: Recor
       slotTeam[num] = { home: hT, away: aT };
       if (hT) counts[num].home[hT] = (counts[num].home[hT] || 0) + 1;
       if (aT) counts[num].away[aT] = (counts[num].away[aT] || 0) + 1;
-      winnerOf[num] = decideWinner(num, hT, aT);
+      winnerOf[num] = decideWinner(num, hT, aT, formDelta[hT || ''] || 0, formDelta[aT || ''] || 0);
     }
 
     // Final (104): semifinal winners.
