@@ -161,6 +161,7 @@ export function processRaw(json: { matches?: unknown[] }): MatchData {
       home: h, away: a,
       score: score?.ft ? (score.ft as number[])[0] + '-' + (score.ft as number[])[1] : null,
       ht: score?.ht ? (score.ht as number[])[0] + '-' + (score.ht as number[])[1] : null,
+      pen: score?.p ? (score.p as number[])[0] + '-' + (score.p as number[])[1] : null,
       goals1: (raw.goals1 as RawGoal[]) || [],
       goals2: (raw.goals2 as RawGoal[]) || [],
       date: raw.date as string,
@@ -185,6 +186,23 @@ export function parseScore(s: string | null): { h: number; a: number } | null {
   if (p.length !== 2) return null;
   const h = parseInt(p[0]), a = parseInt(p[1]);
   return isNaN(h) || isNaN(a) ? null : { h, a };
+}
+
+// Resolves the actual winner of a match, checking a penalty shootout before
+// falling back to regulation/ET score — a tied `score` doesn't mean no winner.
+export function getMatchWinner(
+  entry: { home: string; away: string; score: string | null; pen?: string | null } | undefined | null,
+  espnWinner?: string | null
+): string | undefined {
+  if (!entry) return undefined;
+  if (espnWinner) return espnWinner;
+  if (entry.pen) {
+    const sc = parseScore(entry.pen);
+    if (sc && sc.h !== sc.a) return sc.h > sc.a ? entry.home : entry.away;
+  }
+  const sc = parseScore(entry.score);
+  if (sc && sc.h !== sc.a) return sc.h > sc.a ? entry.home : entry.away;
+  return undefined;
 }
 
 export function getLC(sq: Player[]): Record<string, number> {

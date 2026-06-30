@@ -1,6 +1,6 @@
 import { useState, useEffect as preactUseEffect } from 'preact/hooks';
 import type { Match } from '../types';
-import { FIFA, FLAG, pkey, parseScore, norm, espnNorm } from '../constants';
+import { FIFA, FLAG, pkey, parseScore, getMatchWinner, norm, espnNorm } from '../constants';
 import { $data, $espn, $espnDetails, navigateToTeam } from '../state';
 import { loadEspnSummary } from '../espn';
 import { computeSuspensions } from '../suspensions';
@@ -224,6 +224,7 @@ export function MatchCard({ entry, todayISO, showSquads = true }: MatchCardProps
   const awayD = resolveDisplay(away, simSlot && simSlot.away, dataByKey);
 
   const score = espn && (espn.isLive || espn.isPost) ? espn.score : entry.score;
+  const pen = espn && (espn.isLive || espn.isPost) && espn.pen ? espn.pen : entry.pen;
   const isLive = !!(espn && espn.isLive);
   const clock = isLive ? espn.clock : null;
   const broadcast = espn && espn.broadcast ? espn.broadcast : null;
@@ -290,9 +291,9 @@ export function MatchCard({ entry, todayISO, showSquads = true }: MatchCardProps
 
   const ht = entry.ht;
   const detail = espn ? espn.detail : null;
-  const sc2 = parseScore(score);
-  const hWon = sc2 ? sc2.h > sc2.a : false;
-  const aWon = sc2 ? sc2.a > sc2.h : false;
+  const winner = getMatchWinner({ home, away, score, pen }, espn && espn.isPost ? espn.winner : null);
+  const hWon = winner === home;
+  const aWon = winner === away;
   const r1 = FIFA[homeD.display];
   const r2 = FIFA[awayD.display];
 
@@ -322,6 +323,7 @@ export function MatchCard({ entry, todayISO, showSquads = true }: MatchCardProps
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <span style={{ fontSize: '15px', fontWeight: '800', color: isLive ? '#f87171' : '#fff', background: 'rgba(0,0,0,0.35)', padding: '3px 10px', borderRadius: '6px', border: isLive ? '1px solid rgba(239,68,68,0.5)' : 'none', letterSpacing: '1px', whiteSpace: 'nowrap' }}>{scoreDisp}</span>
                 {ht && !isLive && <span style={{ fontSize: '9px', color: '#4b5563' }}>{ht} HT</span>}
+                {pen && <span style={{ fontSize: '9px', color: '#4b5563' }}>{pen} PEN</span>}
                 {isLive && detail && detail !== clock && <span style={{ fontSize: '9px', color: '#f87171' }}>{detail}</span>}
               </div>
             )}

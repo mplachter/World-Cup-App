@@ -1,5 +1,5 @@
 import type { Match } from './types';
-import { FIFA, GROUPS, pkey, calcStandings, parseScore, BRACKET_FEEDS, BRACKET_THIRD_PLACE_FEEDS } from './constants';
+import { FIFA, GROUPS, pkey, calcStandings, getMatchWinner, BRACKET_FEEDS, BRACKET_THIRD_PLACE_FEEDS } from './constants';
 import { createStore } from './store';
 import annexCData from './data/annex-c.json';
 
@@ -168,8 +168,8 @@ export async function startSimulation(byKey: Record<string, Match>, byNum: Recor
     if (!home || !away) return undefined;
     const real = byNum[String(num)];
     if (real && real.score && real.home === home && real.away === away) {
-      const sc = parseScore(real.score);
-      if (sc && sc.h !== sc.a) return sc.h > sc.a ? home : away;
+      const w = getMatchWinner(real);
+      if (w) return w;
     }
     return simulateKnockoutWinner(home, away);
   }
@@ -191,7 +191,7 @@ export async function startSimulation(byKey: Record<string, Match>, byNum: Recor
       if (p.existing) { simByKey[p.key] = p.existing; }
       else {
         const r = simulateMatch(p.home, p.away);
-        simByKey[p.key] = { home:p.home, away:p.away, score: r.h+'-'+r.a, stage:'group', ht:null, goals1:[], goals2:[], date:'', time:'', ground:null, round:null, num:null };
+        simByKey[p.key] = { home:p.home, away:p.away, score: r.h+'-'+r.a, stage:'group', ht:null, pen:null, goals1:[], goals2:[], date:'', time:'', ground:null, round:null, num:null };
       }
     }
     const st: Record<string, ReturnType<typeof calcStandings>> = {};
