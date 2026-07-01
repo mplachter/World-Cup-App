@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test';
 async function openBracket(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: '🏆 Bracket' }).click();
-  await expect(page.getByRole('button', { name: 'Full Bracket', exact: false })).toBeVisible();
+  await expect(page.getByText('Round of 32', { exact: true })).toBeVisible();
 }
 
 test('app loads and tabs switch without console errors', async ({ page }) => {
@@ -25,11 +25,25 @@ test('bracket view renders all rounds with no thrown errors', async ({ page }) =
   page.on('pageerror', (e) => errors.push(e.message));
 
   await openBracket(page);
-  await expect(page.getByText('R32', { exact: true }).first()).toBeVisible();
-  // Fixed bracket tree: 16 R32 + 8 R16 + 4 QF + 2 SF + 1 third-place + 1 final.
+  // Desktop starts focused on Round of 32 and shows every remaining round
+  // (see the isDesktop/visibleRounds logic in BracketView.tsx), so all slots
+  // in the fixed bracket tree render at once: 16 R32 + 8 R16 + 4 QF + 2 SF +
+  // 1 third-place + 1 final.
   await expect(page.locator('[data-testid="bracket-slot"]')).toHaveCount(32, { timeout: 15_000 });
 
   expect(errors).toEqual([]);
+});
+
+test('clicking a round label jumps directly to that round and trims earlier rounds', async ({
+  page,
+}) => {
+  await openBracket(page);
+  await page.getByText('Quarter-finals', { exact: true }).click();
+  // Let the slide/fade transition (200ms, see the `phase` state machine in
+  // BracketView.tsx) settle before asserting on the trimmed slot count.
+  await page.waitForTimeout(350);
+  // R32 and R16 are trimmed off; only QF (4) + SF (2) + Final (1) + 3rd (1) remain.
+  await expect(page.locator('[data-testid="bracket-slot"]')).toHaveCount(8);
 });
 
 test('a row with a visible score never displays an unresolved team (live/today match regression)', async ({

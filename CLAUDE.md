@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-**World Cup 2026 Tracker** — a live, real-time tracker for the FIFA World Cup with live scores, projected brackets, squad data, and match events. Built as a TypeScript app (no framework), compiled via Vite, deployed to GitHub Pages.
+**World Cup 2026 Tracker** — a live, real-time tracker for the FIFA World Cup with live scores, projected brackets, squad data, and match events. Built with **Preact** (TypeScript, JSX), compiled via Vite, deployed to GitHub Pages.
 
 See [README.md](README.md) for full feature list, data sources, and browser support.
 
@@ -24,18 +24,20 @@ npm run lint       # ESLint on src/
 
 ## Architecture
 
-The app is split into **18 focused modules** organized by responsibility:
+The app is organized by responsibility across a handful of layers:
 
 ### Layer 0: Types & Primitives
 
-- **`types.ts`** — all shared interfaces (Store, Cache, Match, Player, etc.) + DOM types (Child, Children)
+- **`types.ts`** — all shared interfaces (Store, Cache, Match, Player, etc.)
 - **`store.ts`** — tiny reactive layer: `createStore<T>`, `persistedStore<T>`, `persistedCache<T>`
-- **`dom.ts`** — DOM helpers: `ce`, `div`, `span`, `btn`, `inp`, `svg`, `path` + `Attrs` type
+- **`dom.ts`** — legacy DOM helpers (`ce`, `div`, `span`, `btn`, `inp`, `svg`, `path` + `Attrs` type). Views have migrated to Preact JSX; `dom.ts` is only still used by `src/ui/squad.ts`.
+- **`router.ts`** — minimal client-side navigation (tab + selected-team routing)
 
 ### Layer 1: Configuration & State
 
-- **`constants.ts`** — world data (FIFA rankings, FLAGS, GROUPS, LEAGUES), name normalization utilities
-- **`state.ts`** — all reactive stores (`$data`, `$tab`, `$espn`, etc.) + validation, persistence, navigation helpers
+- **`constants.ts`** — world data (FIFA rankings, FLAGS, GROUPS, LEAGUES), name normalization utilities, bracket topology (`BRACKET_BL`/`BRACKET_BR`/`BRACKET_FEEDS`/`BRACKET_NEXT`/`BRACKET_SIBLING`)
+- **`state.ts`** — all reactive stores (`$data`, `$tab`, `$espn`, `$bracketRound`, etc.) + validation, persistence, navigation helpers
+- **`design/`** — design tokens, style mixins, and shared components (e.g. `FilterButton`) used across views
 
 ### Layer 2: Data & Domain Logic
 
@@ -43,21 +45,24 @@ The app is split into **18 focused modules** organized by responsibility:
 - **`espn.ts`** — fetch & parse ESPN live scores (polled 60s) and match summaries (lazy, cached)
 - **`suspensions.ts`** — compute player suspensions (yellows, reds) across 3 FIFA discipline blocks
 - **`simulation.ts`** — Monte Carlo bracket projection (5,000 sims on data change), Elo + Poisson sampling
+- **`hooks/useStore.ts`** — Preact hook that subscribes a component to a `store.ts` store
 
 ### Layer 3: UI Views
 
-All functions export a single DOM element; stored in `src/ui/`:
+Preact components stored in `src/ui/`, each exporting a component function:
 
-- **`schedule.ts`** — schedule view with day groups, match cards, live badge, live jump
-- **`groups.ts`** — group standings, per-group match lists
-- **`teams.ts`** — all 48 nations, squad detail, per-team bracket projection
-- **`matchCard.ts`** — expanded match card with goals, subs, cards, lineups, suspensions (~400 lines, largest single function)
-- **`squad.ts`** — squad roster by league, player rankings
-- **`bracket.ts`** — desktop (SVG grid) and mobile (round pager) bracket views with probability bars
+- **`ScheduleView.tsx`** — schedule view with day groups, match cards, live badge, live jump
+- **`GroupsView.tsx`** — group standings, per-group match lists
+- **`TeamsView.tsx`** — all 48 nations, squad detail, per-team bracket projection
+- **`CatalogView.tsx`** — design/component catalog (dev reference, not part of the live app tabs)
+- **`matchCard.tsx`** — expanded match card with goals, subs, cards, lineups, suspensions (`MatchCard`, reused by `ScheduleView`, `GroupsView`, and the bracket's `MatchDetailPanel`)
+- **`squad.ts`** — squad roster by league, player rankings (still uses `dom.ts` helpers, not JSX)
+- **`BracketView.tsx`** — round-by-round bracket pager (Round of 32 → 16 → QF → SF → Final). Desktop shows every remaining round and trims the passed one off as you step forward; mobile shows the focused round plus a next-round preview. Connector lines are computed from measured DOM positions, not precomputed pixel math. Focus round is persisted in `$bracketRound`.
+- **`HTMLEl.tsx`** — small helper for interop between raw DOM nodes and Preact JSX
 
 ### Layer 4: Bootstrap
 
-- **`main.ts`** — app bootstrap: wire up data loads, side effects, mount to `#root`
+- **`main.tsx`** — app bootstrap: wire up data loads, side effects, mount to `#root`
 
 ### Dependency Flow
 
@@ -68,9 +73,9 @@ types.ts → store.ts / dom.ts / constants.ts
          ↓
   data.ts / espn.ts / suspensions.ts / simulation.ts
          ↓
-      ui/*.ts
+      ui/*.tsx
          ↓
-    main.ts
+    main.tsx
 ```
 
 No circular dependencies.
@@ -100,34 +105,26 @@ const val = cache.get('key'); // null if expired or not found
 
 **See [`.claude/docs/state-management.md`](./.claude/docs/state-management.md) for deep dive.**
 
-### DOM Helpers
+### Views: Preact JSX
 
-DOM creation is handled by a single `ce` function; child elements are typed recursively:
+Views are Preact function components using JSX and hooks (`useState`, `useEffect`, `useRef`), subscribed to `store.ts` stores via `useStore` (`src/hooks/useStore.ts`). Styling is inline `style={{...}}` objects rather than CSS classes/modules.
 
 ```typescript
-// ce(tag, attrs?, ...children)
-// attrs: { onClick, className, id, style: {...}, value, data-attr, ... }
-// children: Child | Child[] (recursively flattened)
-
-ce(
-  'div',
-  { className: 'card', onClick: () => {} },
-  ce('h2', null, 'Title'),
-  ce('p', null, 'Paragraph'),
-  [
-    // Arrays are flattened
-    ce('span', null, 'Item 1'),
-    ce('span', null, 'Item 2'),
-  ],
-);
-
-// Shortcuts: div, span, btn, inp (input), svg, path
-div({ className: 'grid' }, span(null, 'Hello'), btn({ onClick: callback }, 'Click me'));
+export function SomeView() {
+  const data = useStore($data);
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ display: 'flex', gap: '8px' }}>
+      <button onClick={() => setOpen((o) => !o)}>Toggle</button>
+      {open && <span>{data.length} items</span>}
+    </div>
+  );
+}
 ```
 
-`Attrs` type is `Record<string, unknown> | null | undefined`. The `...children: Children[]` parameter is typed as `Child | Child[]` and automatically flattened.
+`src/ui/squad.ts` is the one remaining view still on the older `dom.ts` helper pattern (`ce`, `div`, `span`, `btn`, `inp`, `svg`, `path` — a single `ce(tag, attrs?, ...children)` function with recursively-flattened children). Treat it as legacy rather than the pattern for new views.
 
-**See [`.claude/docs/dom-patterns.md`](./.claude/docs/dom-patterns.md) for details.**
+**See [`.claude/docs/dom-patterns.md`](./.claude/docs/dom-patterns.md) for the `dom.ts` helper details (relevant to `squad.ts` only).**
 
 ### Data Fetching
 
@@ -152,7 +149,7 @@ The bracket changes dynamically as group games finish. Every time group scores u
 3. Bracket slots show probability bars (green = locked, blue = predicted)
 4. Cached in localStorage so repeat visits are instant
 
-Bracket geometry (SVG for desktop, pager for mobile) renders the same data in two layouts.
+The bracket is a single round-by-round pager (`BracketView.tsx`) rather than separate desktop/mobile layouts: desktop shows every remaining round at once and trims the passed round off as you page forward, mobile shows the focused round plus a next-round preview. Connector lines are drawn from measured DOM positions (refs + `getBoundingClientRect`), not precomputed geometry, since the true bracket convergence order crosses between draw halves at the semifinal stage.
 
 ---
 
@@ -179,7 +176,8 @@ Bracket geometry (SVG for desktop, pager for mobile) renders the same data in tw
 
 ### Testing & Verification
 
-- No unit test framework set up yet (vanilla JS, small modules, manual testing sufficient)
+- **Unit tests**: `npm run test:unit` (Vitest) — see `src/simulation.test.ts` for the Elo/Poisson/qualification logic
+- **E2E tests**: `npm run test:e2e` (Playwright, `e2e/`) — builds + serves `dist/` and drives the real app in Chromium; `e2e/bracket.spec.ts` covers bracket rendering, navigation, and live-match regressions
 - **Manual verification**: Start `npm run dev`, open http://localhost:5173, interact with the app
 - **CI checks**: typecheck + lint + build run on every PR; all must pass before merge
 
@@ -188,7 +186,7 @@ Bracket geometry (SVG for desktop, pager for mobile) renders the same data in tw
 ## Common Tasks
 
 **Add a new store** → place it in `state.ts`, export it
-**Add UI component** → create in `src/ui/`, export a function returning `HTMLElement`, import in a view
+**Add UI component** → create a `.tsx` file in `src/ui/`, export a Preact function component, import in a view
 **Add a calculation** → put it in `constants.ts` (small utils) or a new module like `simulation.ts` (complex logic)
 **Debug live data** → Window globals `__WC_DEBUG` and `__WC_ESPN_DUMPED` log ESPN responses to console
 **Fix TypeScript error** → read the error, check `types.ts` for interfaces, cast when needed (use `as` sparingly)
@@ -197,14 +195,15 @@ Bracket geometry (SVG for desktop, pager for mobile) renders the same data in tw
 
 ## Important Files & References
 
-| File               | Purpose                                                    |
-| ------------------ | ---------------------------------------------------------- |
-| `src/main.ts`      | 134-line bootstrap; orchestrates data loads & side effects |
-| `src/state.ts`     | Central hub for all reactive stores; state is here         |
-| `src/constants.ts` | World data, name normalization, utilities                  |
-| `src/store.ts`     | Tiny reactive layer (70 lines of pure code)                |
-| `src/types.ts`     | All interfaces — the source of truth for data shapes       |
-| `vite.config.ts`   | Base path logic for GitHub Pages                           |
+| File                     | Purpose                                                      |
+| ------------------------ | ------------------------------------------------------------- |
+| `src/main.tsx`           | Bootstrap; orchestrates data loads & side effects            |
+| `src/state.ts`           | Central hub for all reactive stores; state is here            |
+| `src/constants.ts`       | World data, name normalization, bracket topology, utilities   |
+| `src/store.ts`           | Tiny reactive layer (createStore/persistedStore/persistedCache) |
+| `src/types.ts`           | All interfaces — the source of truth for data shapes          |
+| `src/ui/BracketView.tsx` | Round-by-round bracket pager, connector-line measurement       |
+| `vite.config.ts`         | Base path logic for GitHub Pages                              |
 
 ## Further Reading
 
