@@ -1086,10 +1086,26 @@ export function BracketView() {
   const status = useStore($status);
   const espn = useStore($espn);
   const sim = useStore($sim);
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' && window.innerWidth < 768,
+  );
   const [view, setView] = useState(isMobile ? 'r32' : 'full');
   const [scrollToMatch, setScrollToMatch] = useState<number | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // Keep the active tab in sync with viewport width — the desktop "Full Bracket"
+  // SVG layout isn't shown as a tab on mobile, but without this the view state
+  // could stay stuck on 'full' after a resize/rotation, rendering that wide
+  // layout squeezed into a narrow viewport.
+  useEffect(() => {
+    function onResize() {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) setView((v) => (v === 'full' ? 'r32' : v));
+    }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Auto-start simulation when data changes
   useEffect(() => {
