@@ -317,7 +317,7 @@ export function stageOf(r: string | null): string {
 // bracket. Single source of truth shared by simulation.ts (Monte Carlo propagation)
 // and BracketView.tsx (layout + round-list navigation).
 export const BRACKET_BL = {
-  r32: [74, 76, 73, 75, 78, 77, 81, 82],
+  r32: [74, 77, 73, 75, 76, 78, 81, 82],
   r16: [89, 90, 91, 92],
   qf: [97, 99],
 };
