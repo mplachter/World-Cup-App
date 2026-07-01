@@ -1,18 +1,8 @@
 import { h } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Match } from '../types';
-import {
-  FLAG,
-  pkey,
-  parseScore,
-  getMatchWinner,
-  localTime,
-  BRACKET_BL,
-  BRACKET_BR,
-  BRACKET_NEXT,
-  BRACKET_SIBLING,
-} from '../constants';
-import { $data, $status, navigateToTeam } from '../state';
+import { FLAG, pkey, parseScore, getMatchWinner, BRACKET_FEEDS } from '../constants';
+import { $data, $status, $today, $bracketRound, navigateToTeam } from '../state';
 import { $espn } from '../state';
 import {
   $sim,
@@ -24,32 +14,70 @@ import {
   dataFingerprint,
 } from '../simulation';
 import { useStore } from '../hooks/useStore';
-import { FilterButton } from '../design/components';
+import { MatchCard } from './matchCard';
 
-// ─── BRACKET LAYOUT GEOMETRY ──────────────────────────────────────────────────
-const BRACKET_BASE_SH = 130;
-const BRACKET_BASE_GAP = 10;
-const BRACKET_FULL_SH = 145;
-const BRACKET_TOTAL_H = 8 * BRACKET_BASE_SH + 7 * BRACKET_BASE_GAP;
-const BRACKET_GAPS = [BRACKET_BASE_GAP, 135, 415];
+// Which round each match number belongs to.
+const ROUND_OF_MATCH: Record<number, string> = { 103: '3rd', 104: 'final' };
+[73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88].forEach(
+  (n) => (ROUND_OF_MATCH[n] = 'r32'),
+);
+[89, 90, 91, 92, 93, 94, 95, 96].forEach((n) => (ROUND_OF_MATCH[n] = 'r16'));
+[97, 98, 99, 100].forEach((n) => (ROUND_OF_MATCH[n] = 'qf'));
+[101, 102].forEach((n) => (ROUND_OF_MATCH[n] = 'sf'));
+
+// Walks BRACKET_FEEDS backwards from the Final to find, in true left-to-right
+// bracket order, every match at `targetRound` that feeds into `num`. Building
+// every round's display order from a single traversal (rather than picking an
+// order per round independently) guarantees that adjacent pairs at every
+// level actually converge into the next round's slot — a plain numeric sort
+// does not, because the draw crosses over between the two bracket halves at
+// the semifinal stage.
+function leavesAtRound(num: number, targetRound: string): number[] {
+  if (ROUND_OF_MATCH[num] === targetRound) return [num];
+  const feed = BRACKET_FEEDS[num];
+  if (!feed) return [];
+  return [...leavesAtRound(feed.home, targetRound), ...leavesAtRound(feed.away, targetRound)];
+}
 
 const ROUND_MATCHES: Record<string, number[]> = {
-  r32: [73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88],
-  r16: [89, 90, 91, 92, 93, 94, 95, 96],
-  qf: [97, 98, 99, 100],
+  r32: leavesAtRound(104, 'r32'),
+  r16: leavesAtRound(104, 'r16'),
+  qf: leavesAtRound(104, 'qf'),
   sf: [101, 102],
   '3rd': [103],
   final: [104],
 };
 
-const SR: Record<string, string> = {
-  r32: 'R32',
-  r16: 'R16',
-  qf: 'Quarterfinal',
-  sf: 'Semifinal',
-  '3rd': 'Third place',
+// Round sequence for the pager — one step per knockout round.
+const ROUND_SEQ = ['r32', 'r16', 'qf', 'sf', 'final'] as const;
+const ROUND_LABELS: Record<string, string> = {
+  r32: 'Round of 32',
+  r16: 'Round of 16',
+  qf: 'Quarter-finals',
+  sf: 'Semifinals',
   final: 'Final',
 };
+
+// A finished real result (including penalty shootouts) — used to light up the
+// connector line tracing that winner into the next round's slot. Module-level
+// (rather than a closure inside BracketView) so the pre-layout-effect that
+// measures connector positions can call it too, ahead of the component's
+// early-return-if-no-data check.
+function isMatchDecided(
+  num: number,
+  byNum: Record<string, Match>,
+  espn: Record<string, any>,
+): boolean {
+  const entry = byNum[num] as Match | undefined;
+  if (!entry?.home || !entry.away || !FLAG[entry.home] || !FLAG[entry.away]) return false;
+  const espnE = espn[pkey(entry.home, entry.away)];
+  const rawScore = espnE && (espnE.isLive || espnE.isPost) ? espnE.score : entry.score;
+  const rawPen = espnE && (espnE.isLive || espnE.isPost) && espnE.pen ? espnE.pen : entry.pen;
+  return !!getMatchWinner(
+    { home: entry.home, away: entry.away, score: rawScore || null, pen: rawPen },
+    espnE?.isPost ? espnE.winner : null,
+  );
+}
 
 type ProjSlot = {
   team?: string;
@@ -59,404 +87,97 @@ type ProjSlot = {
 };
 
 // ─── SVG CONNECTOR ────────────────────────────────────────────────────────────
+// Connector paths are computed from measured DOM positions (see the
+// BracketView `measureLines` effect) rather than precomputed pixel math —
+// hand-computed spacing drifted out of sync with real rendered card heights
+// and the bracket's true convergence order (which crosses between draw halves
+// partway through, so a naive "adjacent items pair up" assumption breaks).
 const CONNECTOR_DIM = 'rgba(255,255,255,0.15)';
 const CONNECTOR_LIT = '#4ade80';
-function Connector({
-  count,
-  sh,
-  gap,
-  flip,
-  wins,
+const CONNECTOR_LOSER = '#60a5fa';
+
+// ─── MATCH DETAIL PANEL (left-side drawer) ────────────────────────────────────
+// Renders the full schedule-style MatchCard in a fixed slide-over instead of
+// growing a bracket row in place — a bracket card is only ~150px wide, nowhere
+// near enough room for goals/lineups/events without overlapping other rows.
+function MatchDetailPanel({
+  entry,
+  todayISO,
+  onClose,
 }: {
-  count: number;
-  sh: number;
-  gap: number;
-  flip?: boolean;
-  wins?: { top?: boolean; bottom?: boolean }[];
+  entry: Match;
+  todayISO: string;
+  onClose: () => void;
 }) {
-  const totalH = count * sh + (count - 1) * gap;
-  const paths: h.JSX.Element[] = [];
-  for (let i = 0; i < count; i += 2) {
-    const ty = i * (sh + gap) + sh / 2,
-      by = (i + 1) * (sh + gap) + sh / 2,
-      my = (ty + by) / 2;
-    const win = wins?.[i / 2];
-    const segs: [string, string][] = [
-      [`M0,${ty} H10 V${my}`, win?.top ? CONNECTOR_LIT : CONNECTOR_DIM],
-      [`M0,${by} H10 V${my}`, win?.bottom ? CONNECTOR_LIT : CONNECTOR_DIM],
-      [`M10,${my} H20`, win?.top || win?.bottom ? CONNECTOR_LIT : CONNECTOR_DIM],
-    ];
-    segs.forEach(([d, stroke], pi) => {
-      paths.push(<path key={i + '-' + pi} d={d} fill="none" stroke={stroke} stroke-width="1.5" />);
-    });
-  }
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
-    <svg
-      width="20"
-      height={String(totalH)}
-      style={{ flexShrink: 0, ...(flip ? { transform: 'scaleX(-1)' } : {}) }}
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 100,
+        display: 'flex',
+        background: 'rgba(0,0,0,0.5)',
+      }}
+      onClick={onClose}
     >
-      {paths}
-    </svg>
-  );
-}
-
-// ─── PROJ SLOT (round list view) ──────────────────────────────────────────────
-function ProjSlotEl({ slot, byKey }: { slot: ProjSlot | null; byKey: Record<string, Match> }) {
-  if (!slot) return <span style={{ color: '#374151', fontSize: '11px' }}>TBD</span>;
-  const { team, confidence, alts = [], candidates } = slot;
-  const mathLocks = getMathLocks(byKey);
-
-  if (candidates && candidates.length) {
-    const top = candidates[0];
-    const secondPct = candidates[1] ? candidates[1].pct : 0;
-    const locked = top.pct >= 0.9 || candidates.slice(1).every((c) => c.pct < 0.1);
-    const projected = !locked && top.pct >= 0.55 && top.pct - secondPct >= 0.25;
-    const allLocked =
-      candidates.length >= 2 && candidates.every((c) => mathLocks[c.team] && c.pct >= 0.02);
-
-    if (locked) {
-      return (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 8px',
-            borderRadius: '4px',
-            background: 'rgba(74,222,128,0.07)',
-            border: '1px solid rgba(74,222,128,0.25)',
-            cursor: 'pointer',
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            navigateToTeam(top.team);
-          }}
-        >
-          <span style={{ fontSize: '14px', flexShrink: 0 }}>{FLAG[top.team] || '❓'}</span>
-          <span
-            style={{
-              fontSize: '11px',
-              fontWeight: 600,
-              color: '#e2e8f0',
-              flex: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {top.team}
-          </span>
-          <span
-            style={{
-              fontSize: '8px',
-              color: '#4ade80',
-              fontFamily: 'monospace',
-              flexShrink: 0,
-              background: 'rgba(74,222,128,0.12)',
-              padding: '1px 4px',
-              borderRadius: '3px',
-            }}
-          >
-            {top.pct >= 0.995 ? 'LOCKED' : Math.round(top.pct * 100) + '%'}
-          </span>
-        </div>
-      );
-    }
-
-    if (allLocked && !projected) {
-      const poolTeams = candidates.filter((c) => mathLocks[c.team] && c.pct >= 0.02).slice(0, 4);
-      const predicted = poolTeams[0];
-      const alternates = poolTeams.slice(1);
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%' }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '5px 8px',
-              borderRadius: '4px',
-              background: 'rgba(168,162,158,0.06)',
-              border: '1px solid rgba(168,162,158,0.22)',
-              cursor: 'pointer',
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              navigateToTeam(predicted.team);
-            }}
-          >
-            <span style={{ fontSize: '14px', flexShrink: 0 }}>{FLAG[predicted.team] || '❓'}</span>
-            <span
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                color: '#e2e8f0',
-                flex: 1,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {predicted.team}
-            </span>
-            <span
-              style={{
-                fontSize: '8px',
-                color: '#a8a29e',
-                fontFamily: 'monospace',
-                flexShrink: 0,
-                background: 'rgba(168,162,158,0.14)',
-                padding: '1px 4px',
-                borderRadius: '3px',
-                letterSpacing: '0.3px',
-              }}
-            >
-              PRED
-            </span>
-          </div>
-          {alternates.length > 0 && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '2px 8px',
-                fontSize: '9px',
-                color: '#78716c',
-              }}
-            >
-              <span>or</span>
-              {alternates.map((c) => (
-                <span
-                  key={c.team}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '3px',
-                    cursor: 'pointer',
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigateToTeam(c.team);
-                  }}
-                >
-                  <span style={{ fontSize: '10px' }}>{FLAG[c.team] || '❓'}</span>
-                  <span style={{ color: '#a8a29e' }}>{c.team}</span>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (projected) {
-      return (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 8px',
-            borderRadius: '4px',
-            background: 'rgba(147,197,253,0.06)',
-            border: '1px solid rgba(147,197,253,0.22)',
-            cursor: 'pointer',
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            navigateToTeam(top.team);
-          }}
-        >
-          <span style={{ fontSize: '14px', flexShrink: 0 }}>{FLAG[top.team] || '❓'}</span>
-          <span
-            style={{
-              fontSize: '11px',
-              fontWeight: 600,
-              color: '#e2e8f0',
-              flex: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {top.team}
-          </span>
-          <span
-            style={{
-              fontSize: '8px',
-              color: '#93c5fd',
-              fontFamily: 'monospace',
-              flexShrink: 0,
-              background: 'rgba(147,197,253,0.12)',
-              padding: '1px 4px',
-              borderRadius: '3px',
-            }}
-          >
-            {Math.round(top.pct * 100)}%
-          </span>
-        </div>
-      );
-    }
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%' }}>
-        {candidates.slice(0, 3).map((c) => {
-          const pctTxt =
-            c.pct >= 0.995 ? '>99%' : c.pct < 0.005 ? '<1%' : Math.round(c.pct * 100) + '%';
-          return (
-            <div
-              key={c.team}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '2px 6px',
-                borderRadius: '3px',
-                position: 'relative',
-                overflow: 'hidden',
-                cursor: 'pointer',
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                navigateToTeam(c.team);
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: Math.max(2, c.pct * 100) + '%',
-                  background: 'rgba(59,130,246,0.22)',
-                  zIndex: 0,
-                }}
-              />
-              <span style={{ fontSize: '12px', flexShrink: 0, zIndex: 1, position: 'relative' }}>
-                {FLAG[c.team] || '❓'}
-              </span>
-              <span
-                style={{
-                  fontSize: '10px',
-                  color: '#e2e8f0',
-                  flex: 1,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  zIndex: 1,
-                  position: 'relative',
-                }}
-              >
-                {c.team}
-              </span>
-              <span
-                style={{
-                  fontSize: '9px',
-                  color: '#9ca3af',
-                  fontFamily: 'monospace',
-                  flexShrink: 0,
-                  zIndex: 1,
-                  position: 'relative',
-                }}
-              >
-                {pctTxt}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  const [altsOpen, setAltsOpen] = useState(false);
-  const isUnknown = confidence === 'unknown';
-  const displayTeam = isUnknown ? 'TBD' : team!;
-  const displayFlag = isUnknown ? '❓' : FLAG[team!] || '❓';
-  const showAlts = !isUnknown && alts.length > 0;
-  const color =
-    confidence === 'confirmed'
-      ? '#4ade80'
-      : confidence === 'projected'
-        ? '#93c5fd'
-        : confidence === 'contested'
-          ? '#fbbf24'
-          : '#6b7280';
-  const bg =
-    confidence === 'confirmed'
-      ? 'rgba(74,222,128,0.1)'
-      : confidence === 'projected'
-        ? 'rgba(147,197,253,0.08)'
-        : confidence === 'contested'
-          ? 'rgba(251,191,36,0.1)'
-          : 'rgba(255,255,255,0.04)';
-
-  return (
-    <div>
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '3px',
-          padding: '3px 6px',
-          borderRadius: '4px',
-          background: bg,
-          border: `1px solid ${color}44`,
-          cursor: showAlts ? 'pointer' : isUnknown ? 'default' : 'pointer',
-          minWidth: 0,
+          width: 'min(420px, 92vw)',
+          height: '100%',
+          background: '#0b1220',
+          borderRight: '1px solid rgba(255,255,255,0.1)',
+          boxShadow: '4px 0 32px rgba(0,0,0,0.55)',
+          overflowY: 'auto',
+          padding: '16px',
         }}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (showAlts) setAltsOpen((o) => !o);
-          else if (!isUnknown) navigateToTeam(team!);
-        }}
+        onClick={(e) => e.stopPropagation()}
       >
-        <span style={{ fontSize: '13px', flexShrink: 0 }}>{displayFlag}</span>
-        <span
+        <div
           style={{
-            fontSize: '10px',
-            fontWeight: 600,
-            color: isUnknown ? '#4b5563' : displayTeam === 'TBD' ? '#374151' : '#e2e8f0',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            flex: 1,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '14px',
           }}
         >
-          {displayTeam}
-        </span>
-        {showAlts && (
-          <span style={{ fontSize: '9px', color, flexShrink: 0, marginLeft: '2px' }}>
-            +{alts.length}
+          <span
+            style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              color: '#9ca3af',
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+            }}
+          >
+            Match Details
           </span>
-        )}
-      </div>
-      {showAlts && altsOpen && (
-        <div style={{ marginTop: '4px' }}>
-          {alts.map((alt) => (
-            <div
-              key={alt.team}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '3px',
-                padding: '2px 4px',
-                borderRadius: '3px',
-                background: 'rgba(251,191,36,0.08)',
-                border: '1px solid rgba(251,191,36,0.2)',
-                marginBottom: '2px',
-              }}
-            >
-              <span style={{ fontSize: '11px' }}>{FLAG[alt.team] || '❓'}</span>
-              <span style={{ fontSize: '9px', color: '#fbbf24' }}>{alt.team}</span>
-              <span style={{ fontSize: '8px', color: '#4b5563', marginLeft: '2px' }}>
-                if {alt.condition}
-              </span>
-            </div>
-          ))}
+          <button
+            onClick={onClose}
+            style={{
+              width: '28px',
+              height: '28px',
+              borderRadius: '50%',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.05)',
+              color: '#9ca3af',
+              fontSize: '16px',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
         </div>
-      )}
+        <MatchCard entry={entry} todayISO={todayISO} defaultOpen />
+      </div>
     </div>
   );
 }
@@ -470,6 +191,8 @@ function PBSlot({
   small,
   byKey,
   espn,
+  expandable,
+  onExpandToggle,
 }: {
   num: number;
   projHome: ProjSlot | null;
@@ -478,9 +201,10 @@ function PBSlot({
   small?: boolean;
   byKey: Record<string, Match>;
   espn: Record<string, any>;
+  expandable?: boolean;
+  onExpandToggle?: () => void;
 }) {
   const w = small ? 128 : 148;
-  const sh = small ? 130 : 145;
   const mathLocks = getMathLocks(byKey);
   const espnE = entry ? espn[pkey(entry.home || '', entry.away || '')] : null;
   const rawScore = espnE && (espnE.isLive || espnE.isPost) ? espnE.score : entry?.score;
@@ -853,6 +577,10 @@ function PBSlot({
         }}
         onClick={(e) => {
           e.stopPropagation();
+          if (expandable && onExpandToggle) {
+            onExpandToggle();
+            return;
+          }
           if (!isUnknown) navigateToTeam(proj.team!);
         }}
       >
@@ -899,7 +627,6 @@ function PBSlot({
       data-match-num={num}
       style={{
         width: w + 'px',
-        minHeight: sh + 'px',
         borderRadius: '6px',
         overflow: 'hidden',
         border: isLive ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(255,255,255,0.1)',
@@ -907,7 +634,6 @@ function PBSlot({
         flexShrink: 0,
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'center',
       }}
     >
       {makeRow(homeProj, hW, hScore, true)}
@@ -1086,26 +812,183 @@ export function BracketView() {
   const status = useStore($status);
   const espn = useStore($espn);
   const sim = useStore($sim);
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== 'undefined' && window.innerWidth < 768,
-  );
-  const [view, setView] = useState(isMobile ? 'r32' : 'full');
-  const [scrollToMatch, setScrollToMatch] = useState<number | null>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const todayISO = useStore($today);
+  const bracketRoundId = useStore($bracketRound);
+  const [expandedNum, setExpandedNum] = useState<number | null>(null);
+  const [showThirds, setShowThirds] = useState(false);
+  const [rowsHeight, setRowsHeight] = useState<number | null>(null);
+  const [lines, setLines] = useState<{ d: string; stroke: string }[]>([]);
+  const [phase, setPhase] = useState<'idle' | 'out' | 'in'>('idle');
+  const [dir, setDir] = useState<1 | -1>(1);
+  const pendingRoundRef = useRef<string | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const leftRowsRef = useRef<HTMLDivElement>(null);
+  const slotRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
-  // Keep the active tab in sync with viewport width — the desktop "Full Bracket"
-  // SVG layout isn't shown as a tab on mobile, but without this the view state
-  // could stay stuck on 'full' after a resize/rotation, rendering that wide
-  // layout squeezed into a narrow viewport.
+  const roundIndex = Math.max(0, ROUND_SEQ.indexOf(bracketRoundId as (typeof ROUND_SEQ)[number]));
+
+  // Desktop shows the whole remaining bracket (every round from the focused
+  // one through the Final) and trims the passed round off as you step
+  // forward; mobile only has room for the focused round plus a next-round
+  // preview.
+  const [isDesktop, setIsDesktop] = useState(
+    typeof window !== 'undefined' && window.innerWidth >= 768,
+  );
   useEffect(() => {
     function onResize() {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-      if (mobile) setView((v) => (v === 'full' ? 'r32' : v));
+      setIsDesktop(window.innerWidth >= 768);
     }
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+  const visibleRounds = isDesktop
+    ? ROUND_SEQ.slice(roundIndex)
+    : ROUND_SEQ.slice(roundIndex, roundIndex + 2);
+
+  // Slide-and-fade transition between rounds: animate the current pair out,
+  // then commit the new round to the persisted store (so a reload keeps the
+  // user's place) and animate the new pair in from the opposite side.
+  function goToRound(newIndex: number) {
+    const clamped = Math.max(0, Math.min(ROUND_SEQ.length - 1, newIndex));
+    if (clamped === roundIndex || phase !== 'idle') return;
+    setDir(clamped > roundIndex ? 1 : -1);
+    pendingRoundRef.current = ROUND_SEQ[clamped];
+    setPhase('out');
+  }
+
+  useEffect(() => {
+    if (phase === 'out') {
+      const t = window.setTimeout(() => {
+        if (pendingRoundRef.current) $bracketRound.set(pendingRoundRef.current);
+        setPhase('in');
+      }, 200);
+      return () => clearTimeout(t);
+    }
+    if (phase === 'in') {
+      let raf2 = 0;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setPhase('idle'));
+      });
+      return () => {
+        cancelAnimationFrame(raf1);
+        if (raf2) cancelAnimationFrame(raf2);
+      };
+    }
+  }, [phase]);
+
+  // The left (currently focused) column's rendered height sets the reference;
+  // the right (next-round preview) column stretches to fill that same height
+  // via CSS `justify-content: space-evenly` (see renderColumn) instead of
+  // hand-computed per-round gaps, so it stays correct even if a row's real
+  // rendered height varies (e.g. a candidate-probability stack is taller than
+  // a plain score row).
+  useEffect(() => {
+    function measureHeight() {
+      const h = leftRowsRef.current?.getBoundingClientRect().height;
+      if (h) setRowsHeight(h);
+    }
+    measureHeight();
+    const ro = new ResizeObserver(measureHeight);
+    if (leftRowsRef.current) ro.observe(leftRowsRef.current);
+    window.addEventListener('resize', measureHeight);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measureHeight);
+    };
+  }, [data, espn, sim, bracketRoundId]);
+
+  // Draws connector lines between real, measured row positions for every
+  // adjacent pair of currently visible rounds, instead of precomputed pixel
+  // offsets — robust to any row's actual rendered height and to the
+  // bracket's true convergence order (see leavesAtRound above).
+  useEffect(() => {
+    function measureLines() {
+      const stage = stageRef.current;
+      if (!stage) {
+        setLines([]);
+        return;
+      }
+      const byNum = (data?.byNum || {}) as Record<string, Match>;
+      const stageRect = stage.getBoundingClientRect();
+      function box(num: number) {
+        const el = slotRefs.current[num];
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          left: r.left - stageRect.left,
+          right: r.right - stageRect.left,
+          midY: (r.top + r.bottom) / 2 - stageRect.top,
+        };
+      }
+      const segs: { d: string; stroke: string }[] = [];
+      for (let c = 0; c < visibleRounds.length - 1; c++) {
+        const leftId = visibleRounds[c];
+        const rightId = visibleRounds[c + 1];
+        if (rightId === 'final') continue;
+        const fromNums = ROUND_MATCHES[leftId] || [];
+        const toNums = ROUND_MATCHES[rightId] || [];
+        for (let i = 0; i < fromNums.length; i += 2) {
+          const top = box(fromNums[i]);
+          const bottom = box(fromNums[i + 1]);
+          const dest = box(toNums[i / 2]);
+          if (!top || !bottom || !dest) continue;
+          const midX = (top.right + dest.left) / 2;
+          const avgY = (top.midY + bottom.midY) / 2;
+          const topLit = isMatchDecided(fromNums[i], byNum, espn);
+          const bottomLit = isMatchDecided(fromNums[i + 1], byNum, espn);
+          segs.push({
+            d: `M${top.right},${top.midY} H${midX} V${avgY}`,
+            stroke: topLit ? CONNECTOR_LIT : CONNECTOR_DIM,
+          });
+          segs.push({
+            d: `M${bottom.right},${bottom.midY} H${midX} V${avgY}`,
+            stroke: bottomLit ? CONNECTOR_LIT : CONNECTOR_DIM,
+          });
+          segs.push({
+            d: `M${midX},${avgY} H${dest.left}`,
+            stroke: topLit || bottomLit ? CONNECTOR_LIT : CONNECTOR_DIM,
+          });
+        }
+      }
+      // Semifinal winners feed the Final (green); semifinal losers feed the
+      // 3rd-place match (blue). This is a fan-out (2 sources, 2 destinations
+      // each) rather than the usual 2-into-1 convergence, so it's drawn
+      // separately from the loop above.
+      if (visibleRounds.includes('sf') && visibleRounds.includes('final')) {
+        const finalBox = box(104);
+        const thirdBox = box(103);
+        [101, 102].forEach((num) => {
+          const src = box(num);
+          if (!src) return;
+          const stroke = isMatchDecided(num, byNum, espn) ? null : CONNECTOR_DIM;
+          if (finalBox) {
+            const midX = (src.right + finalBox.left) / 2;
+            segs.push({
+              d: `M${src.right},${src.midY} H${midX} V${finalBox.midY} H${finalBox.left}`,
+              stroke: stroke || CONNECTOR_LIT,
+            });
+          }
+          if (thirdBox) {
+            const midX = (src.right + thirdBox.left) / 2;
+            segs.push({
+              d: `M${src.right},${src.midY} H${midX} V${thirdBox.midY} H${thirdBox.left}`,
+              stroke: stroke || CONNECTOR_LOSER,
+            });
+          }
+        });
+      }
+      setLines(segs);
+    }
+    const raf = requestAnimationFrame(measureLines);
+    const ro = new ResizeObserver(measureLines);
+    if (stageRef.current) ro.observe(stageRef.current);
+    window.addEventListener('resize', measureLines);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      window.removeEventListener('resize', measureLines);
+    };
+  }, [data, espn, sim, rowsHeight, bracketRoundId, phase, isDesktop]);
 
   // Auto-start simulation when data changes
   useEffect(() => {
@@ -1119,15 +1002,6 @@ export function BracketView() {
     }
     maybeAutoStartSim();
   }, [data]);
-
-  // Scroll to match after view change
-  useEffect(() => {
-    if (scrollToMatch !== null) {
-      const el = contentRef.current?.querySelector(`[data-match-num="${scrollToMatch}"]`);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setScrollToMatch(null);
-    }
-  }, [view, scrollToMatch]);
 
   if (!data || !data.byKey || Object.keys(data.byKey).length === 0) {
     const msg =
@@ -1229,132 +1103,111 @@ export function BracketView() {
     };
   }
 
-  function makeBslot(num: number, small = false) {
+  // A row for one match slot. Clicking a resolved fixture opens the full
+  // match card in the left-side detail panel instead of expanding in place,
+  // so this row's height (and therefore connector-line geometry) never
+  // changes based on click state. Registers a ref so the measure-lines effect
+  // can find its real rendered position.
+  function pagerSlot(num: number) {
     const { home, away, entry } = getSlots(num);
+    const isResolved = !!(entry?.home && entry.away && FLAG[entry.home] && FLAG[entry.away]);
     return (
-      <PBSlot
-        key={num}
-        num={num}
-        projHome={home}
-        projAway={away}
-        entry={entry}
-        small={small}
-        byKey={byKey}
-        espn={espn}
-      />
-    );
-  }
-
-  // A finished real result (including penalty shootouts) — used to light up
-  // the connector line tracing that winner into the next round's slot.
-  function isMatchDecided(num: number): boolean {
-    const entry = byNum[num] as Match | undefined;
-    if (!entry?.home || !entry.away || !FLAG[entry.home] || !FLAG[entry.away]) return false;
-    const espnE = espn[pkey(entry.home, entry.away)];
-    const rawScore = espnE && (espnE.isLive || espnE.isPost) ? espnE.score : entry.score;
-    const rawPen = espnE && (espnE.isLive || espnE.isPost) && espnE.pen ? espnE.pen : entry.pen;
-    return !!getMatchWinner(
-      { home: entry.home, away: entry.away, score: rawScore || null, pen: rawPen },
-      espnE?.isPost ? espnE.winner : null,
-    );
-  }
-
-  function makeBhalf(nums: number[], depth: number, flip = false) {
-    const small = depth === 0;
-    const sh = small ? BRACKET_BASE_SH : BRACKET_FULL_SH;
-    const gap = BRACKET_GAPS[depth];
-    const slotArea = nums.length * sh + (nums.length - 1) * gap;
-    const pad = Math.max(0, (BRACKET_TOTAL_H - slotArea) / 2);
-    const slots = (
       <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: gap + 'px',
-          paddingTop: pad + 'px',
-          paddingBottom: pad + 'px',
+        key={num}
+        ref={(el) => {
+          slotRefs.current[num] = el;
         }}
       >
-        {nums.map((n) => makeBslot(n, small))}
+        <PBSlot
+          num={num}
+          projHome={home}
+          projAway={away}
+          entry={entry}
+          byKey={byKey}
+          espn={espn}
+          expandable={isResolved}
+          onExpandToggle={() => setExpandedNum(num)}
+        />
       </div>
     );
-    const wins: { top?: boolean; bottom?: boolean }[] = [];
-    for (let i = 0; i < nums.length; i += 2) {
-      wins.push({ top: isMatchDecided(nums[i]), bottom: isMatchDecided(nums[i + 1]) });
+  }
+
+  const ROW_GAP = 12;
+
+  // Renders one round's column. `isLeft` is the currently focused round
+  // (natural height, sets the reference for the right column); the right
+  // column is the next-round preview, stretched to match via space-evenly.
+  function renderColumn(roundId: (typeof ROUND_SEQ)[number], isLeft: boolean) {
+    // The Final isn't part of the doubling chain (it's fed by both
+    // semifinals), so it's just centered on its own; 3rd place sits below it
+    // without a connector, same convention the old full-bracket view used
+    // (this pairing — 2 sources, 2 destinations — doesn't reduce to a single
+    // line the way every other round transition does).
+    if (roundId === 'final') {
+      return (
+        <div
+          key={roundId}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '10px',
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#fbbf24' }}>🏆 FINAL</div>
+          {pagerSlot(104)}
+          <div style={{ height: '16px' }} />
+          <div style={{ fontSize: '10px', color: '#6b7280' }}>3rd Place</div>
+          {pagerSlot(103)}
+        </div>
+      );
     }
-    const conn = <Connector count={nums.length} sh={sh} gap={gap} flip={flip} wins={wins} />;
+
+    const nums = ROUND_MATCHES[roundId] || [];
     return (
-      <div style={{ display: 'flex', alignItems: 'center' }}>
-        {flip ? (
-          <>
-            {conn}
-            {slots}
-          </>
-        ) : (
-          <>
-            {slots}
-            {conn}
-          </>
-        )}
+      <div key={roundId} style={{ flexShrink: 0 }}>
+        <div
+          ref={isLeft ? leftRowsRef : undefined}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: isLeft ? ROW_GAP + 'px' : 0,
+            height: !isLeft && rowsHeight ? rowsHeight + 'px' : undefined,
+            justifyContent: isLeft ? undefined : 'space-evenly',
+          }}
+        >
+          {nums.map((n) => pagerSlot(n))}
+        </div>
       </div>
     );
   }
 
-  const ROUND_VIEWS = [
-    { id: 'r32', l: 'R32' },
-    { id: 'r16', l: 'R16' },
-    { id: 'qf', l: 'QF' },
-    { id: 'sf', l: 'SF' },
-    { id: '3rd', l: '3rd' },
-    { id: 'final', l: 'Final' },
-  ];
-  const VIEWS = isMobile ? ROUND_VIEWS : [{ id: 'full', l: '🏆 Full Bracket' }, ...ROUND_VIEWS];
-
-  // Round list navigation lookup tables
-  const NEXT_M = BRACKET_NEXT;
-  const SIBLING_M = BRACKET_SIBLING;
-  const ROUND_OF: Record<number, string> = {};
-  [73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88].forEach(
-    (n) => (ROUND_OF[n] = 'R16'),
-  );
-  [89, 90, 91, 92, 93, 94, 95, 96].forEach((n) => (ROUND_OF[n] = 'QF'));
-  [97, 98, 99, 100].forEach((n) => (ROUND_OF[n] = 'SF'));
-  [101, 102].forEach((n) => (ROUND_OF[n] = 'Final'));
-  const ROUND_TAB: Record<string, string> = { R16: 'r16', QF: 'qf', SF: 'sf', Final: 'final' };
-
-  function effectiveTeam(slot: ProjSlot) {
-    if (slot.confidence === 'confirmed' && slot.team && slot.team !== 'TBD') return slot.team;
-    if (slot.candidates && slot.candidates.length) {
-      const cands = slot.candidates;
-      const top = cands[0];
-      const secondPct = cands[1] ? cands[1].pct : 0;
-      const locked = top.pct >= 0.9 || cands.slice(1).every((c) => c.pct < 0.1);
-      const projected = top.pct >= 0.55 && top.pct - secondPct >= 0.25;
-      const ml = getMathLocks(byKey);
-      const allLocked = cands.length >= 2 && cands.every((c) => ml[c.team] && c.pct >= 0.02);
-      if (locked || projected || allLocked) return top.team;
-    }
-    return null;
+  function navBtnStyle(disabled: boolean): h.JSX.CSSProperties {
+    return {
+      width: '32px',
+      height: '32px',
+      borderRadius: '50%',
+      border: '1px solid rgba(255,255,255,0.12)',
+      background: 'rgba(255,255,255,0.04)',
+      color: disabled ? '#374151' : '#e2e8f0',
+      fontSize: '16px',
+      cursor: disabled ? 'default' : 'pointer',
+      flexShrink: 0,
+    };
   }
 
-  function flagged(name: string) {
-    const f = FLAG[name];
-    return f ? f + ' ' + name : name;
-  }
-
-  const BL = BRACKET_BL;
-  const BR = BRACKET_BR;
+  const expandedEntry = expandedNum !== null ? (byNum[expandedNum] as Match | undefined) : null;
 
   return (
     <div>
-      {/* View selector */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
-        {VIEWS.map((v) => (
-          <FilterButton key={v.id} active={view === v.id} onClick={() => setView(v.id)}>
-            {v.l}
-          </FilterButton>
-        ))}
-      </div>
+      {expandedEntry && (
+        <MatchDetailPanel
+          entry={expandedEntry}
+          todayISO={todayISO}
+          onClose={() => setExpandedNum(null)}
+        />
+      )}
 
       {/* Legend */}
       <div
@@ -1404,409 +1257,218 @@ export function BracketView() {
       {/* Sim status panel */}
       <SimPanel byKey={byKey} byNum={byNum} />
 
-      {/* Content */}
-      <div ref={contentRef}>
-        {view !== 'full' ? (
-          // Round list view
-          <div>
-            <div
+      {/* Round pager header — click a round name to jump straight to it */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '10px',
+          gap: '8px',
+        }}
+      >
+        <button
+          onClick={() => goToRound(roundIndex - 1)}
+          disabled={roundIndex === 0 || phase !== 'idle'}
+          style={navBtnStyle(roundIndex === 0 || phase !== 'idle')}
+        >
+          ‹
+        </button>
+        <div
+          style={{
+            display: 'flex',
+            gap: '14px',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+          }}
+        >
+          {ROUND_SEQ.map((r, i) => (
+            <span
+              key={r}
+              onClick={() => goToRound(i)}
               style={{
-                fontSize: '10px',
-                color: '#6b7280',
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                marginBottom: '8px',
+                fontSize: i === roundIndex ? '14px' : '12px',
+                fontWeight: i === roundIndex ? 700 : 400,
+                color: i === roundIndex ? '#e2e8f0' : '#6b7280',
+                whiteSpace: 'nowrap',
+                cursor: phase === 'idle' ? 'pointer' : 'default',
               }}
             >
-              {SR[view]} · {(ROUND_MATCHES[view] || []).length} match
-              {(ROUND_MATCHES[view] || []).length === 1 ? '' : 'es'}
-            </div>
-            {(ROUND_MATCHES[view] || []).map((num) => {
-              const { home, away, entry } = getSlots(num);
-              const ko = entry?.date
-                ? new Date(entry.date + 'T12:00:00').toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                  })
-                : '';
-              const tm = entry?.time ? localTime(entry.time) : '';
-              const venue = entry?.ground || '';
-              const meta = [ko, tm].filter(Boolean).join(' · ');
-              const nextNum = NEXT_M[num];
-              const sibNum = SIBLING_M[num];
-              const nextRound = nextNum ? ROUND_OF[num] : null;
+              {ROUND_LABELS[r]}
+            </span>
+          ))}
+        </div>
+        <button
+          onClick={() => goToRound(roundIndex + 1)}
+          disabled={roundIndex === ROUND_SEQ.length - 1 || phase !== 'idle'}
+          style={navBtnStyle(roundIndex === ROUND_SEQ.length - 1 || phase !== 'idle')}
+        >
+          ›
+        </button>
+      </div>
 
-              let suffix: h.JSX.Element | null = null;
-              if (sibNum) {
-                const sibSlots = getSlots(sibNum);
-                const hTeam = effectiveTeam(sibSlots.home);
-                const aTeam = effectiveTeam(sibSlots.away);
-                if (hTeam && aTeam) {
-                  suffix = (
-                    <span style={{ color: '#94a3b8' }}>
-                      {' '}
-                      · winner faces {flagged(hTeam)} / {flagged(aTeam)}
-                    </span>
-                  );
-                } else if (hTeam) {
-                  suffix = (
-                    <span style={{ color: '#94a3b8' }}>
-                      {' '}
-                      · winner faces {flagged(hTeam)}
-                      <span style={{ color: '#4b5563' }}> or M{sibNum} away winner</span>
-                    </span>
-                  );
-                } else if (aTeam) {
-                  suffix = (
-                    <span style={{ color: '#94a3b8' }}>
-                      {' '}
-                      · winner faces {flagged(aTeam)}
-                      <span style={{ color: '#4b5563' }}> or M{sibNum} home winner</span>
-                    </span>
-                  );
-                } else {
-                  suffix = (
-                    <span style={{ color: '#4b5563' }}> · winner faces M{sibNum} winner</span>
-                  );
-                }
-              }
+      {/* Focused round onward (desktop) or focused + next-round preview
+          (mobile), animated between rounds. Horizontal scroll covers the
+          case where the full remaining bracket is wider than the viewport. */}
+      <div
+        style={{
+          width: '100%',
+          minWidth: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          paddingBottom: '8px',
+        }}
+      >
+        <div
+          ref={stageRef}
+          style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            flexShrink: 0,
+            gap: '40px',
+            transform:
+              phase === 'out'
+                ? `translateX(${dir * -24}px)`
+                : phase === 'in'
+                  ? `translateX(${dir * 24}px)`
+                  : 'translateX(0)',
+            opacity: phase === 'idle' ? 1 : 0,
+            transition: phase === 'in' ? 'none' : 'transform 200ms ease, opacity 200ms ease',
+          }}
+        >
+          {visibleRounds.map((r, i) => renderColumn(r, i === 0))}
+          <svg
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
+              overflow: 'visible',
+            }}
+          >
+            {lines.map((seg, i) => (
+              <path key={i} d={seg.d} fill="none" stroke={seg.stroke} stroke-width="1.5" />
+            ))}
+          </svg>
+        </div>
+      </div>
 
-              return (
-                <div
-                  key={num}
-                  data-match-num={String(num)}
-                  style={{
-                    borderRadius: '8px',
-                    marginBottom: '6px',
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,255,255,0.07)',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {(meta || venue) && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '5px 12px',
-                        fontSize: '10px',
-                        color: '#6b7280',
-                        background: 'rgba(255,255,255,0.02)',
-                        borderBottom: '1px solid rgba(255,255,255,0.04)',
-                      }}
-                    >
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ color: '#374151', fontWeight: 600 }}>M{num}</span>
-                        {meta && <span>{meta}</span>}
-                      </span>
-                      {venue && (
-                        <span
-                          style={{
-                            color: '#4b5563',
-                            maxWidth: '45%',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {venue}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '10px 12px',
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <ProjSlotEl slot={home} byKey={byKey} />
-                    </div>
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        color: '#4b5563',
-                        padding: '0 4px',
-                        flexShrink: 0,
-                      }}
-                    >
-                      vs
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <ProjSlotEl slot={away} byKey={byKey} />
-                    </div>
-                  </div>
-                  {nextNum && (
-                    <div
-                      style={{
-                        padding: '5px 12px 7px',
-                        fontSize: '10px',
-                        color: '#6b7280',
-                        borderTop: '1px solid rgba(255,255,255,0.04)',
-                        background: 'rgba(255,255,255,0.015)',
-                        cursor: 'pointer',
-                      }}
-                      onClick={() => {
-                        const tabId = ROUND_TAB[nextRound!];
-                        if (!tabId) return;
-                        setView(tabId);
-                        setScrollToMatch(nextNum);
-                      }}
-                    >
-                      <span style={{ color: '#60a5fa' }}>
-                        → M{nextNum} ({nextRound})
-                      </span>
-                      {suffix}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          // Full SVG bracket view
-          <div>
-            <div style={{ fontSize: '11px', color: '#4b5563', marginBottom: '8px' }}>
-              ← Scroll to see full bracket
-            </div>
-            <div style={{ overflowX: 'auto', paddingBottom: '16px' }}>
+      {/* Best 3rd place — collapsed by default, it's reference info rather
+          than something most visits need front and center. */}
+      <div
+        onClick={() => setShowThirds((v) => !v)}
+        style={{
+          marginTop: '16px',
+          marginBottom: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          cursor: 'pointer',
+        }}
+      >
+        <span
+          style={{
+            fontSize: '10px',
+            color: '#4b5563',
+            transform: showThirds ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 150ms ease',
+            display: 'inline-block',
+          }}
+        >
+          ▶
+        </span>
+        <span
+          style={{
+            fontSize: '10px',
+            fontWeight: '600',
+            color: '#4b5563',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+          }}
+        >
+          Best 3rd Place Standings
+        </span>
+      </div>
+      {showThirds && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '6px',
+            marginBottom: '8px',
+          }}
+        >
+          {proj.thirds.slice(0, 9).map((t, i) => {
+            if (!t.team) return null;
+            return (
               <div
+                key={t.team}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  width: 'max-content',
-                  minWidth: '980px',
-                  margin: '0 auto',
-                  padding: '4px 0',
+                  gap: '6px',
+                  padding: '5px 8px',
+                  borderRadius: '6px',
+                  background: i < 8 ? 'rgba(59,130,246,0.06)' : 'rgba(239,68,68,0.06)',
+                  border:
+                    i < 8 ? '1px solid rgba(59,130,246,0.15)' : '1px solid rgba(239,68,68,0.15)',
+                  cursor: 'pointer',
                 }}
+                onClick={() => navigateToTeam(t.team!)}
               >
-                {/* Left half */}
-                {(
-                  [
-                    ['R32', BL.r32, 0, false],
-                    ['R16', BL.r16, 1, false],
-                    ['QF', BL.qf, 2, false],
-                  ] as [string, number[], number, boolean][]
-                ).map(([label, nums, depth]) => (
-                  <div
-                    key={label + 'L'}
-                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
-                  >
-                    <div
-                      style={{
-                        fontSize: '10px',
-                        fontWeight: '600',
-                        color: '#4b5563',
-                        textTransform: 'uppercase',
-                        marginBottom: '8px',
-                        textAlign: 'center',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {label}
-                    </div>
-                    {makeBhalf(nums, depth, false)}
-                  </div>
-                ))}
-
-                {/* Center column */}
-                <div
+                <span
                   style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    minWidth: '160px',
-                    padding: '0 8px',
-                    height: BRACKET_TOTAL_H + 'px',
+                    fontSize: '12px',
+                    color: i < 8 ? '#9ca3af' : '#6b7280',
+                    fontFamily: 'monospace',
+                    minWidth: '16px',
                   }}
                 >
-                  <div style={{ height: '188.5px', flexShrink: 0 }} />
+                  {i + 1}
+                </span>
+                <span style={{ fontSize: '14px' }}>{FLAG[t.team] || '🏳'}</span>
+                <div style={{ minWidth: 0 }}>
                   <div
                     style={{
-                      fontSize: '10px',
-                      fontWeight: '600',
-                      color: '#4b5563',
-                      textTransform: 'uppercase',
-                      height: '14px',
-                      flexShrink: 0,
+                      fontSize: '11px',
+                      color: i < 8 ? '#e2e8f0' : '#6b7280',
+                      fontWeight: i < 8 ? 600 : 400,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    SF
+                    {t.team}
                   </div>
-                  {makeBslot(101)}
-                  <div
-                    style={{
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '100%',
-                      gap: '4px',
-                    }}
-                  >
-                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#fbbf24' }}>
-                      🏆 FINAL
-                    </div>
-                    {makeBslot(104)}
-                    <div style={{ height: '12px' }} />
-                    <div style={{ fontSize: '10px', color: '#6b7280' }}>3rd Place</div>
-                    {makeBslot(103)}
+                  <div style={{ fontSize: '9px', color: '#4b5563' }}>
+                    {t.pts}pts {t.gf - t.ga >= 0 ? '+' : ''}
+                    {t.gf - t.ga} Grp {t.group}
                   </div>
-                  <div
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: '600',
-                      color: '#4b5563',
-                      textTransform: 'uppercase',
-                      height: '14px',
-                      flexShrink: 0,
-                    }}
-                  >
-                    SF
-                  </div>
-                  {makeBslot(102)}
-                  <div style={{ height: '202.5px', flexShrink: 0 }} />
                 </div>
-
-                {/* Right half */}
-                {(
-                  [
-                    ['QF', BR.qf, 2, true],
-                    ['R16', BR.r16, 1, true],
-                    ['R32', BR.r32, 0, true],
-                  ] as [string, number[], number, boolean][]
-                ).map(([label, nums, depth, flip]) => (
-                  <div
-                    key={label + 'R'}
-                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+                {i === 7 && (
+                  <span
+                    style={{ fontSize: '9px', color: '#4ade80', marginLeft: 'auto', flexShrink: 0 }}
                   >
-                    <div
-                      style={{
-                        fontSize: '10px',
-                        fontWeight: '600',
-                        color: '#4b5563',
-                        textTransform: 'uppercase',
-                        marginBottom: '8px',
-                        textAlign: 'center',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {label}
-                    </div>
-                    {makeBhalf(nums, depth, flip)}
-                  </div>
-                ))}
+                    ✓ in
+                  </span>
+                )}
+                {i === 8 && (
+                  <span
+                    style={{ fontSize: '9px', color: '#f87171', marginLeft: 'auto', flexShrink: 0 }}
+                  >
+                    ✗ out
+                  </span>
+                )}
               </div>
-            </div>
-
-            {/* Best 3rd place */}
-            <div
-              style={{
-                marginTop: '16px',
-                fontSize: '10px',
-                fontWeight: '600',
-                color: '#4b5563',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: '8px',
-              }}
-            >
-              Best 3rd Place Standings
-            </div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '6px',
-                marginBottom: '8px',
-              }}
-            >
-              {proj.thirds.slice(0, 9).map((t, i) => {
-                if (!t.team) return null;
-                return (
-                  <div
-                    key={t.team}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '5px 8px',
-                      borderRadius: '6px',
-                      background: i < 8 ? 'rgba(59,130,246,0.06)' : 'rgba(239,68,68,0.06)',
-                      border:
-                        i < 8
-                          ? '1px solid rgba(59,130,246,0.15)'
-                          : '1px solid rgba(239,68,68,0.15)',
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => navigateToTeam(t.team!)}
-                  >
-                    <span
-                      style={{
-                        fontSize: '12px',
-                        color: i < 8 ? '#9ca3af' : '#6b7280',
-                        fontFamily: 'monospace',
-                        minWidth: '16px',
-                      }}
-                    >
-                      {i + 1}
-                    </span>
-                    <span style={{ fontSize: '14px' }}>{FLAG[t.team] || '🏳'}</span>
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontSize: '11px',
-                          color: i < 8 ? '#e2e8f0' : '#6b7280',
-                          fontWeight: i < 8 ? 600 : 400,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {t.team}
-                      </div>
-                      <div style={{ fontSize: '9px', color: '#4b5563' }}>
-                        {t.pts}pts {t.gf - t.ga >= 0 ? '+' : ''}
-                        {t.gf - t.ga} Grp {t.group}
-                      </div>
-                    </div>
-                    {i === 7 && (
-                      <span
-                        style={{
-                          fontSize: '9px',
-                          color: '#4ade80',
-                          marginLeft: 'auto',
-                          flexShrink: 0,
-                        }}
-                      >
-                        ✓ in
-                      </span>
-                    )}
-                    {i === 8 && (
-                      <span
-                        style={{
-                          fontSize: '9px',
-                          color: '#f87171',
-                          marginLeft: 'auto',
-                          flexShrink: 0,
-                        }}
-                      >
-                        ✗ out
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

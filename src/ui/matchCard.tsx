@@ -14,6 +14,7 @@ interface MatchCardProps {
   entry: Match;
   todayISO: string;
   showSquads?: boolean;
+  defaultOpen?: boolean;
 }
 
 function resolveDisplay(
@@ -416,8 +417,13 @@ function MatchEvents({
   );
 }
 
-export function MatchCard({ entry, todayISO, showSquads = true }: MatchCardProps) {
-  const [isOpen, setIsOpen] = useState(false);
+export function MatchCard({
+  entry,
+  todayISO,
+  showSquads = true,
+  defaultOpen = false,
+}: MatchCardProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
 
   const espnMap = useStore($espn);
   const espnDetailsMap = useStore($espnDetails);

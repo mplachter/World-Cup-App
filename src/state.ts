@@ -36,6 +36,13 @@ export const $scheduleTeamFilter = persistedStore<string>(
   '',
   (v) => typeof v === 'string',
 );
+// Which knockout round the bracket pager is focused on — survives tab
+// switches and reloads so the user doesn't lose their place.
+export const $bracketRound = persistedStore<string>(
+  'wc2026:bracketRound',
+  'r32',
+  (v) => typeof v === 'string',
+);
 
 // ─── PERSISTENT CACHES ────────────────────────────────────────────────────────
 // Declared here so data/espn modules can reference them synchronously at
