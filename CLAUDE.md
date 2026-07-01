@@ -195,15 +195,15 @@ The bracket is a single round-by-round pager (`BracketView.tsx`) rather than sep
 
 ## Important Files & References
 
-| File                     | Purpose                                                      |
-| ------------------------ | ------------------------------------------------------------- |
-| `src/main.tsx`           | Bootstrap; orchestrates data loads & side effects            |
-| `src/state.ts`           | Central hub for all reactive stores; state is here            |
-| `src/constants.ts`       | World data, name normalization, bracket topology, utilities   |
+| File                     | Purpose                                                         |
+| ------------------------ | --------------------------------------------------------------- |
+| `src/main.tsx`           | Bootstrap; orchestrates data loads & side effects               |
+| `src/state.ts`           | Central hub for all reactive stores; state is here              |
+| `src/constants.ts`       | World data, name normalization, bracket topology, utilities     |
 | `src/store.ts`           | Tiny reactive layer (createStore/persistedStore/persistedCache) |
-| `src/types.ts`           | All interfaces — the source of truth for data shapes          |
-| `src/ui/BracketView.tsx` | Round-by-round bracket pager, connector-line measurement       |
-| `vite.config.ts`         | Base path logic for GitHub Pages                              |
+| `src/types.ts`           | All interfaces — the source of truth for data shapes            |
+| `src/ui/BracketView.tsx` | Round-by-round bracket pager, connector-line measurement        |
+| `vite.config.ts`         | Base path logic for GitHub Pages                                |
 
 ## Further Reading
 
